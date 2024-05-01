@@ -1,0 +1,21 @@
+version: '3'
+services:
+  winter-backend-cardano:
+    build: .
+    volumes:
+      - .:/usr/src/app
+    ports:
+      - "4193:4000"
+    env_file:
+      - .env
+  cache:
+    image: redis:6.2-alpine
+    restart: always
+    ports:
+      - '6379:6379'
+    command: redis-server
+    volumes:
+      - cache:/data
+volumes:
+  cache:
+    driver: local
