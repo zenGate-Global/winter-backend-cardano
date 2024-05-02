@@ -5,6 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PalmyraModule } from './palmyra/palmyra.module';
 import { DatabaseModule } from './database/database.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { LoggerModule } from 'nestjs-pino';
 
 @Module({
   imports: [
@@ -15,6 +16,19 @@ import { TransactionsModule } from './transactions/transactions.module';
     PalmyraModule,
     DatabaseModule,
     TransactionsModule,
+    LoggerModule.forRoot({
+      pinoHttp: {
+        customProps: (req, res) => ({
+          context: 'HTTP',
+        }),
+        transport: {
+          target: 'pino-pretty',
+          options: {
+            singleLine: true,
+          },
+        },
+      },
+    }),
   ],
   controllers: [AppController],
   providers: [AppService],

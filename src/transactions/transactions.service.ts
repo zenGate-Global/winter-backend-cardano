@@ -76,7 +76,6 @@ export class TransactionsService {
     if (!tx) {
       tx = await this.findRecreated(txid, outputIndex);
     }
-    console.log(`here: ${tx}`);
     tx.spent = updateTransactionDto.spent;
     await this.entityManager.save(tx);
   }

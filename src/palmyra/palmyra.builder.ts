@@ -1,12 +1,22 @@
 import { EventFactory } from 'winter-cardano-mesh';
-import { NETWORK, ZENGATE_MNEMONIC } from '../constants';
-import { IEvaluator, IFetcher, ISubmitter } from '@meshsdk/core';
+import {
+  KOIOS_BASE_URL,
+  NETWORK,
+  TX_SUBMIT_API,
+  ZENGATE_MNEMONIC,
+} from '../constants';
+import { IEvaluator, IFetcher, ISubmitter, UTxO } from '@meshsdk/core';
 import { Job } from 'bull';
 import {
   recreateCommodityJob,
   spendCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
+import { getNonMempoolUtxos, getTotalLovelace } from './palymra.utxo.service';
+import axios from 'axios';
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('Builder');
 
 export async function buildMint(
   provider: IFetcher & ISubmitter & IEvaluator,
@@ -17,9 +27,9 @@ export async function buildMint(
     seed: ZENGATE_MNEMONIC(),
   });
 
-  const walletAddressPK = winterEvent.getAddressPK(
-    await winterEvent.getWalletAddress(),
-  );
+  const walletAddress = await winterEvent.getWalletAddress();
+
+  const walletAddressPK = winterEvent.getAddressPK(walletAddress);
 
   await winterEvent.setObjectContract({
     protocolVersion: BigInt(1),
@@ -30,18 +40,21 @@ export async function buildMint(
     signers: [walletAddressPK],
   });
 
-  const walletUtxos = await winterEvent.getWalletUtxos();
+  const finalUtxos = submit
+    ? await getWalletUtxosWithRetry(winterEvent, 6)
+    : await winterEvent.getWalletUtxos();
 
   const completeTx = await winterEvent.mintSingleton(
     job.data.tokenName,
-    walletUtxos,
+    finalUtxos,
   );
 
   const signedTx = await winterEvent.signTx(completeTx);
 
+  logger.debug(`Mint signed tx: ${signedTx}`);
+
   if (submit) {
-    const txHash = await winterEvent.submitTx(signedTx);
-    return txHash;
+    return submitTx(signedTx);
   }
 }
 
@@ -54,14 +67,17 @@ export async function buildRecreate(
     seed: ZENGATE_MNEMONIC(),
   });
 
-  const walletUtxos = await winterEvent.getWalletUtxos();
+  const walletAddress = await winterEvent.getWalletAddress();
+
   const utxos = await winterEvent.getUtxosByOutRef(job.data.utxos);
 
-  console.log(JSON.stringify(utxos));
+  const finalUtxos = submit
+    ? await getWalletUtxosWithRetry(winterEvent, 6)
+    : await winterEvent.getWalletUtxos();
 
   const completeTx = await winterEvent.recreate(
-    await winterEvent.getWalletAddress(),
-    walletUtxos,
+    walletAddress,
+    finalUtxos,
     utxos,
     job.data.newDataReferences.map((d) =>
       Buffer.from(d, 'utf8').toString('hex'),
@@ -70,13 +86,10 @@ export async function buildRecreate(
 
   const signedTx = await winterEvent.signTx(completeTx);
 
+  logger.debug(`Recreation signed tx: ${signedTx}`);
+
   if (submit) {
-    try {
-      const txHash = await winterEvent.submitTx(signedTx);
-      return txHash;
-    } catch (error) {
-      console.log(error);
-    }
+    return submitTx(signedTx);
   }
 }
 
@@ -89,22 +102,75 @@ export async function buildSpend(
     seed: ZENGATE_MNEMONIC(),
   });
 
-  const walletUtxos = await winterEvent.getWalletUtxos();
+  const walletAddress = await winterEvent.getWalletAddress();
+
   const utxos = await winterEvent.getUtxosByOutRef(job.data.utxos);
 
+  const finalUtxos = submit
+    ? await getWalletUtxosWithRetry(winterEvent, 6)
+    : await winterEvent.getWalletUtxos();
+
   const completeTx = await winterEvent.spend(
-    await winterEvent.getWalletAddress(),
-    await winterEvent.getWalletAddress(),
-    walletUtxos,
+    walletAddress,
+    walletAddress,
+    finalUtxos,
     utxos,
-    'https://preprod.koios.rest/api/v1',
+    KOIOS_BASE_URL(),
   );
 
   const signedTx = await winterEvent.signTx(completeTx);
 
+  logger.debug(`Spend signed tx: ${signedTx}`);
+
   if (submit) {
-    const txHash = await winterEvent.submitTx(signedTx);
-    console.log(txHash);
-    return txHash;
+    return submitTx(signedTx);
   }
+}
+
+export async function submitTx(signedTx: string): Promise<string> {
+  try {
+    const signedTxCbor = Buffer.from(signedTx, 'hex');
+
+    const response = await axios.post(TX_SUBMIT_API(), signedTxCbor, {
+      headers: {
+        'Content-Type': 'application/cbor',
+      },
+      responseType: 'text',
+    });
+
+    return response.data.toString().replace(/"/g, '');
+  } catch (error) {
+    logger.error('Error submitting transaction:', error.response.data);
+    throw error.response.data;
+  }
+}
+
+async function getWalletUtxosWithRetry(
+  winterEvent: EventFactory,
+  maxAttempts: number,
+): Promise<UTxO[]> {
+  let walletUtxos: UTxO[];
+  let finalUtxos: UTxO[];
+  let attemptCount = 0;
+
+  while (attemptCount < maxAttempts) {
+    try {
+      walletUtxos = await winterEvent.getWalletUtxos();
+      finalUtxos = await getNonMempoolUtxos(walletUtxos);
+      const lovelace = getTotalLovelace(finalUtxos);
+      if (lovelace >= BigInt(20000000)) {
+        break;
+      } else {
+        attemptCount++;
+        logger.log(
+          `Attempt ${attemptCount}: No available utxos founds, retrying in 10 seconds...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+      }
+    } catch (error) {
+      logger.error(error);
+    }
+  }
+
+  return finalUtxos;
 }

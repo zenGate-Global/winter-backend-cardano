@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import {
@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class PalmyraService {
+  private readonly logger = new Logger(PalmyraService.name);
   constructor(
     @InjectQueue('tx-queue') private queue: Queue,
     private configService: ConfigService,
@@ -32,6 +33,7 @@ export class PalmyraService {
       await buildSpend(this.provider, { data: jobArguments }, false);
       await this.queue.add('spend-commodity', jobArguments);
     } catch (error) {
+      this.logger.error(error);
       throw new BadRequestException('Spend Tx Failed', {
         cause: error,
         description: JSON.stringify(error),
@@ -44,6 +46,7 @@ export class PalmyraService {
       await buildMint(this.provider, { data: jobArguments }, false);
       await this.queue.add('tokenize-commodity', jobArguments);
     } catch (error) {
+      this.logger.error(error);
       throw new BadRequestException('Mint Tx Failed', {
         cause: error,
         description: JSON.stringify(error),
@@ -56,6 +59,7 @@ export class PalmyraService {
       await buildRecreate(this.provider, { data: jobArguments }, false);
       await this.queue.add('recreate-commodity', jobArguments);
     } catch (error) {
+      this.logger.error(error);
       throw new BadRequestException('Recreate Tx Failed', {
         cause: error,
         description: JSON.stringify(error),

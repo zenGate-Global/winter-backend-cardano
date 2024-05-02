@@ -21,10 +21,6 @@ import { ConfigService } from '@nestjs/config';
     }),
     BullModule.registerQueue({
       name: 'tx-queue',
-      limiter: {
-        max: 1,
-        duration: 10000,
-      },
     }),
     TypeOrmModule.forFeature([Transaction]),
   ],
