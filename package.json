@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@cardano-ogmios/client": "^6.2.0",
     "@cardano-ogmios/schema": "^6.2.0",
     "@meshsdk/core": "^1.5.14",
     "@nestjs/bull": "^10.0.1",
@@ -39,14 +40,17 @@
     "bull": "^4.11.3",
     "json-bigint": "^1.0.0",
     "jsonwebtoken": "^9.0.1",
+    "nestjs-pino": "^4.0.0",
     "passport": "^0.6.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.11.5",
+    "pino-http": "^9.0.0",
+    "pino-pretty": "^11.0.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.2.0",
     "socket.io": "^4.7.1",
     "typeorm": "^0.3.20",
-    "winter-cardano-mesh": "^0.0.20-alpha"
+    "winter-cardano-mesh": "^0.0.28-alpha"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.1.4",
