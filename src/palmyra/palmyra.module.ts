@@ -7,6 +7,8 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { ConfigService } from '@nestjs/config';
+import { Check } from '../check/entities/check.entity';
+import { CheckService } from '../check/check.service';
 
 @Module({
   imports: [
@@ -22,9 +24,14 @@ import { ConfigService } from '@nestjs/config';
     BullModule.registerQueue({
       name: 'tx-queue',
     }),
-    TypeOrmModule.forFeature([Transaction]),
+    TypeOrmModule.forFeature([Check, Transaction]),
   ],
   controllers: [PalmyraController],
-  providers: [PalmyraService, PalmyraConsumerService, TransactionsService],
+  providers: [
+    PalmyraService,
+    PalmyraConsumerService,
+    TransactionsService,
+    CheckService,
+  ],
 })
 export class PalmyraModule {}

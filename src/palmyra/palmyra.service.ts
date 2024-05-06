@@ -10,6 +10,7 @@ import { MaestroProvider } from '@meshsdk/core';
 import { NETWORK } from '../constants';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { ConfigService } from '@nestjs/config';
+import { CheckService } from '../check/check.service';
 
 /* eslint-disable  @typescript-eslint/no-non-null-assertion */
 
@@ -19,6 +20,7 @@ export class PalmyraService {
   constructor(
     @InjectQueue('tx-queue') private queue: Queue,
     private configService: ConfigService,
+    private readonly checkDb: CheckService,
   ) {}
 
   private readonly provider = new MaestroProvider({
@@ -32,6 +34,11 @@ export class PalmyraService {
     try {
       await buildSpend(this.provider, { data: jobArguments }, false);
       await this.queue.add('spend-commodity', jobArguments);
+      await this.checkDb.create({
+        id: jobArguments.id,
+        type: 'SPEND',
+        status: 'PENDING',
+      });
     } catch (error) {
       this.logger.error(error);
       throw new BadRequestException('Spend Tx Failed', {
@@ -45,6 +52,15 @@ export class PalmyraService {
     try {
       await buildMint(this.provider, { data: jobArguments }, false);
       await this.queue.add('tokenize-commodity', jobArguments);
+      await this.checkDb.create({
+        id: jobArguments.id,
+        type: 'TOKENIZE',
+        status: 'PENDING',
+        additionalInfo: {
+          tokenName: jobArguments.tokenName,
+          metadataReference: jobArguments.metadataReference,
+        },
+      });
     } catch (error) {
       this.logger.error(error);
       throw new BadRequestException('Mint Tx Failed', {
@@ -58,6 +74,15 @@ export class PalmyraService {
     try {
       await buildRecreate(this.provider, { data: jobArguments }, false);
       await this.queue.add('recreate-commodity', jobArguments);
+      await this.checkDb.create({
+        id: jobArguments.id,
+        type: 'RECREATE',
+        status: 'PENDING',
+        additionalInfo: {
+          utxos: jobArguments.utxos,
+          newDataReferences: jobArguments.newDataReferences,
+        },
+      });
     } catch (error) {
       this.logger.error(error);
       throw new BadRequestException('Recreate Tx Failed', {
