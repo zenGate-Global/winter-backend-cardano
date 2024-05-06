@@ -6,6 +6,7 @@ import { PalmyraModule } from './palmyra/palmyra.module';
 import { DatabaseModule } from './database/database.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { LoggerModule } from 'nestjs-pino';
+import { CheckModule } from './check/check.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { LoggerModule } from 'nestjs-pino';
     PalmyraModule,
     DatabaseModule,
     TransactionsModule,
+    CheckModule,
     LoggerModule.forRoot({
       pinoHttp: {
         customProps: (req, res) => ({
