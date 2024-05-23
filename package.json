@@ -50,7 +50,7 @@
     "rxjs": "^7.2.0",
     "socket.io": "^4.7.1",
     "typeorm": "^0.3.20",
-    "winter-cardano-mesh": "^0.0.28-alpha"
+    "winter-cardano-mesh": "^0.0.37-alpha"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.1.4",
