@@ -23,6 +23,8 @@ export async function buildMint(
   job: Job<tokenizeCommodityJob> | { data: tokenizeCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
   const winterEvent = new EventFactory(NETWORK(), provider, {
     seed: ZENGATE_MNEMONIC(),
   });
@@ -63,6 +65,8 @@ export async function buildRecreate(
   job: Job<recreateCommodityJob> | { data: recreateCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
   const winterEvent = new EventFactory(NETWORK(), provider, {
     seed: ZENGATE_MNEMONIC(),
   });
@@ -98,6 +102,8 @@ export async function buildSpend(
   job: Job<spendCommodityJob> | { data: spendCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
   const winterEvent = new EventFactory(NETWORK(), provider, {
     seed: ZENGATE_MNEMONIC(),
   });

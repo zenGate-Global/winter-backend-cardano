@@ -12,12 +12,29 @@ import {
   tokenizeCommodity,
 } from '../types/job.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { ObjectDatum } from 'winter-cardano-mesh';
 @Controller('palmyra')
 export class PalmyraController {
   constructor(private readonly palmyraService: PalmyraService) {}
 
+  @Post('commodityDetails')
+  async commodityDetails(
+    @Body() message: { tokenIds: string[] },
+  ): Promise<{ message: ObjectDatum[] }> {
+    const response = await this.palmyraService.getDataByTokenIds(
+      message.tokenIds,
+    );
+    const convertedResponse = JSON.parse(
+      JSON.stringify(response, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      ),
+    );
+
+    return { message: convertedResponse };
+  }
+
   @Post('spendCommodity')
-  async listComm(
+  async spendCommodity(
     @Body() message: spendCommodity,
   ): Promise<{ message: string; id: string }> {
     const id = uuidv4();
