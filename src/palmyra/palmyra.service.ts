@@ -13,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service';
 import { getEventDatum, Koios } from 'winter-cardano-mesh';
 import { ObjectDatum } from 'winter-cardano-mesh/src/models';
+import { CheckStatus, CheckType } from '../check/entities/check.entity';
 
 /* eslint-disable  @typescript-eslint/no-non-null-assertion */
 
@@ -43,18 +44,18 @@ export class PalmyraService {
       );
     } catch (error) {
       this.logger.error(`koios api error: ${error}`);
-      throw new BadRequestException('Koios API Error', {
-        cause: error,
-        description: JSON.stringify(error),
+      throw new BadRequestException({
+        message: 'Koios API Error',
+        cause: error.message,
       });
     }
     try {
       return datums.map((d: string) => getEventDatum(d));
     } catch (error) {
       this.logger.error(`datum decode error: ${error}`);
-      throw new BadRequestException('Datum Decode Error', {
-        cause: error,
-        description: JSON.stringify(error),
+      throw new BadRequestException({
+        message: 'Datum Decode Error',
+        cause: error.message,
       });
     }
   }
@@ -64,8 +65,8 @@ export class PalmyraService {
       await this.queue.add('spend-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,
-        type: 'SPEND',
-        status: 'PENDING',
+        type: CheckType.SPEND,
+        status: CheckStatus.PENDING,
       });
     } catch (error) {
       this.logger.error(error);
@@ -82,8 +83,8 @@ export class PalmyraService {
       await this.queue.add('tokenize-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,
-        type: 'TOKENIZE',
-        status: 'PENDING',
+        type: CheckType.TOKENIZE,
+        status: CheckStatus.PENDING,
         additionalInfo: {
           tokenName: jobArguments.tokenName,
           metadataReference: jobArguments.metadataReference,
@@ -104,8 +105,8 @@ export class PalmyraService {
       await this.queue.add('recreate-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,
-        type: 'RECREATE',
-        status: 'PENDING',
+        type: CheckType.RECREATE,
+        status: CheckStatus.PENDING,
         additionalInfo: {
           utxos: jobArguments.utxos,
           newDataReferences: jobArguments.newDataReferences,

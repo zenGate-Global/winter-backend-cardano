@@ -7,23 +7,35 @@ import {
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { Transaction } from './entities/transaction.entity';
+import { ApiBadRequestResponse, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ErrorResponse } from '../palmyra/dto/error.dto';
 
+@ApiTags('Transactions')
 @Controller('transactions')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
-  // @Post()
-  // async create(@Body() createTransactionDto: CreateTransactionDto) {
-  //   return this.transactionsService.create(createTransactionDto);
-  // }
-
   @Get()
-  async findAll() {
+  @ApiResponse({
+    description: 'Returns all transactions',
+    type: Transaction,
+    isArray: true,
+  })
+  async findAll(): Promise<Transaction[]> {
     return this.transactionsService.findAll();
   }
 
   @Get(':txid')
-  async findOne(@Param('txid') txid: string) {
+  @ApiResponse({
+    description: 'Returns a transaction by txid',
+    type: Transaction,
+    isArray: true,
+  })
+  @ApiBadRequestResponse({
+    description: 'issue with txid',
+    type: ErrorResponse,
+  })
+  async findOne(@Param('txid') txid: string): Promise<Transaction[]> {
     if (!/[0-9A-Fa-f]{6}/g.test(txid) || txid.length !== 64) {
       throw new HttpException(
         'txid must be hex of length 64',
