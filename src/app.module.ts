@@ -7,6 +7,7 @@ import { DatabaseModule } from './database/database.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { LoggerModule } from 'nestjs-pino';
 import { CheckModule } from './check/check.module';
+import { IpfsModule } from './ipfs/ipfs.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { CheckModule } from './check/check.module';
         },
       },
     }),
+    IpfsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
