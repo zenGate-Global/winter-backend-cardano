@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { Transaction } from './entities/transaction.entity';
-import { ApiBadRequestResponse, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiCreatedResponse, ApiTags } from '@nestjs/swagger';
 import { ErrorResponse } from '../palmyra/dto/error.dto';
 
 @ApiTags('Transactions')
@@ -16,7 +16,7 @@ export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
   @Get()
-  @ApiResponse({
+  @ApiCreatedResponse({
     description: 'Returns all transactions',
     type: Transaction,
     isArray: true,
@@ -26,7 +26,7 @@ export class TransactionsController {
   }
 
   @Get(':txid')
-  @ApiResponse({
+  @ApiCreatedResponse({
     description: 'Returns a transaction by txid',
     type: Transaction,
     isArray: true,
