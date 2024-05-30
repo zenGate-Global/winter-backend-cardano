@@ -1,16 +1,16 @@
 services:
-#  winter-backend-cardano:
-#    build: .
-#    volumes:
-#      - .:/usr/src/app
-#    ports:
-#      - "4193:4000"
-#    env_file:
-#      - .env
-#    depends_on:
-#      - redis
-#      - db
-#    restart: always
+  winter-backend-cardano:
+    build: .
+    volumes:
+      - .:/usr/src/app
+    ports:
+      - "4193:4000"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+    restart: always
 
   redis:
     image: redis:6.2-alpine
