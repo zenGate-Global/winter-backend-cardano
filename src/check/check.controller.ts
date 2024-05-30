@@ -1,7 +1,7 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { CheckService } from './check.service';
 import { Check } from './entities/check.entity';
-import { ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiCreatedResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Check')
 @Controller('check')
@@ -9,7 +9,7 @@ export class CheckController {
   constructor(private readonly checkService: CheckService) {}
 
   @Get()
-  @ApiResponse({
+  @ApiCreatedResponse({
     description: 'Returns all transactions',
     type: Check,
     isArray: true,
@@ -19,7 +19,7 @@ export class CheckController {
   }
 
   @Get(':id')
-  @ApiResponse({
+  @ApiCreatedResponse({
     description: 'Returns a transaction by txid',
     type: Check,
   })
