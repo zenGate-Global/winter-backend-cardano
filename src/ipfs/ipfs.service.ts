@@ -1,24 +1,25 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { CIDString, NFTStorage } from 'nft.storage';
 import { ConfigService } from '@nestjs/config';
+import { PinataSDK } from 'pinata';
 
 @Injectable()
 export class IpfsService {
-  private readonly NFT_STORAGE_KEY: string;
   private readonly logger = new Logger(IpfsService.name);
+  private readonly pinata: PinataSDK;
 
   constructor(private configService: ConfigService) {
-    this.NFT_STORAGE_KEY = this.configService.get<string>(
-      'NFT_STORAGE_API_KEY',
-    );
+    const jwt = this.configService.get<string>('PINATA_JWT');
+    const gateway = this.configService.get<string>('NEXT_PUBLIC_GATEWAY_URL');
+    this.pinata = new PinataSDK({
+      pinataJwt: jwt,
+      pinataGateway: gateway,
+    });
   }
-  async storeJson(json: any): Promise<CIDString> {
+
+  async storeJson(json: any): Promise<string> {
     try {
-      const nftstorage = new NFTStorage({ token: this.NFT_STORAGE_KEY });
-      const file = new Blob([JSON.stringify(json)], {
-        type: 'application/json',
-      });
-      return nftstorage.storeBlob(file);
+      const upload = await this.pinata.upload.public.json(json);
+      return upload.cid;
     } catch (error) {
       this.logger.error(`ipfs upload error: ${error}`);
       throw new BadRequestException({
