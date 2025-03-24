@@ -1,0 +1,18 @@
+meta {
+  name: Tokenize Commodity
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{winter}}/palmyra/tokenizeCommodity
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "tokenName": "test name",
+    "metadataReference": "ipfs://bafkreicee6unl6peffg4q6r4tnmd3zinwaizbxy3hg7dzkjzzk7kkmh4bi"
+  }
+}
