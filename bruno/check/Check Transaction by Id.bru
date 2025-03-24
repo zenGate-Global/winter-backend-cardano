@@ -1,0 +1,15 @@
+meta {
+  name: Check Transaction by Id
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{winter}}/check/:id
+  body: none
+  auth: none
+}
+
+params:path {
+  id: 
+}
