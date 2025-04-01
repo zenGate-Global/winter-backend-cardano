@@ -31,6 +31,13 @@ class MetadataValue {
   value: string | MetadataValue[];
 }
 
+class ReadPoint {
+  @IsString()
+  @IsNotEmpty()
+  @ApiProperty({ description: 'Read point ID', example: 'MWA' })
+  id: string;
+}
+
 class InputItem {
   @IsNotEmpty()
   @ApiProperty({ description: 'Item identifier', example: '<identifier>' })
@@ -67,19 +74,9 @@ class OutputItem {
 
 export class EventDto {
   @IsNotEmpty()
-  @ApiProperty({ description: 'Event name', example: 'Green Tea' })
-  name: string;
-
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Event version', example: 1.0 })
-  version: number;
-
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Event creation date',
-    example: '2023-05-26T14:30:00Z',
-  })
-  creationDate: string;
+  @ApiProperty({ description: 'Event version', example: '1.0.0' })
+  @IsIn(['1.0.0, 2.0.0-alpha'])
+  version: string;
 
   @IsNotEmpty()
   @IsString()
@@ -94,13 +91,20 @@ export class EventDto {
   @ApiProperty({ description: 'Event type', example: 'object' })
   eventType: string;
 
+  @IsNotEmpty()
+  @ApiProperty({
+    description: 'Event creation time',
+    example: '2023-05-26T14:30:00Z',
+  })
+  eventTime: string;
+
   @IsOptional()
   @IsString()
   @ApiProperty({ description: 'Event ID', example: '' })
   eventId: string;
 
   @IsArray()
-  @IsNotEmpty()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => InputItem)
   @ApiProperty({
@@ -110,19 +114,24 @@ export class EventDto {
   inputItems: InputItem[];
 
   @IsArray()
-  @IsNotEmpty()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => OutputItem)
   @ApiProperty({ description: 'Output items', type: [OutputItem] })
   outputItems: OutputItem[];
 
-  @IsNotEmpty()
-  @IsArray()
+  @IsOptional()
+  @Type(() => ReadPoint)
+  @ApiProperty({ description: 'Event read point', type: ReadPoint })
+  readPoint: ReadPoint;
+
+  @IsOptional()
   @ValidateNested({ each: true })
-  @Type(() => MetadataValue)
+  //@Type(() => MetadataValue)
   @ApiProperty({
     description: 'Event metadata',
-    type: [MetadataValue],
+    type: 'object',
+    additionalProperties: { type: 'string' },
   })
-  metadata: MetadataValue[];
+  metadata: Record<string, string>;
 }
