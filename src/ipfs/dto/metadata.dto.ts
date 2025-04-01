@@ -70,7 +70,7 @@ class ReadPoint {
 class InputItem {
   @IsNotEmpty()
   @ApiProperty({ description: 'Item identifier.', example: '<identifier>' })
-  itemIdentifier: string;
+  itemId: string;
 
   @IsOptional()
   @ApiProperty({ description: 'Item event ID.', example: '<tokenId>' })
@@ -92,7 +92,7 @@ class InputItem {
 class OutputItem {
   @IsNotEmpty()
   @ApiProperty({ description: 'Item identifier.', example: '<identifier>' })
-  itemIdentifier: string;
+  itemId: string;
 
   @IsNotEmpty()
   @ApiProperty({ description: 'Item quantity.', example: 500 })
@@ -107,7 +107,7 @@ class OutputItem {
 export class EventDto {
   @IsNotEmpty()
   @ApiProperty({ description: 'Event version.', example: '1.0.0' })
-  @IsIn(['1.0.0, 2.0.0-alpha'])
+  @IsIn(['1.0.0', '2.0.0-alpha'])
   version: string;
 
   @IsNotEmpty()

@@ -33,6 +33,7 @@ export class IpfsController {
     type: ErrorResponse,
   })
   async store(@Body() data: StoreIpfsDto): Promise<StoreIpfsResponseDto> {
+    console.log(`raw data: ${data}`);
     const res = await this.ipfsService.storeJson(data);
     try {
       if (isCID(res)) {
@@ -40,12 +41,16 @@ export class IpfsController {
           hash: res as string,
         };
       }
-    } catch (error) {}
-    this.logger.error(`cid validation failed: ${res}`);
-    throw new HttpException(
-      `IPFS Upload Failed`,
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+    } catch (error) {
+      this.logger.error(`CID validation failed: ${error}`);
+      throw new HttpException(
+        `IPFS Upload Failed`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        {
+          cause: error.message,
+        },
+      );
+    }
   }
 }
 
