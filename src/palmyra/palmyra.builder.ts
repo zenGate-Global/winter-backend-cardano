@@ -25,38 +25,43 @@ export async function buildMint(
 ): Promise<string | void> {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
-  const winterEvent = new EventFactory(NETWORK(), provider, {
-    seed: ZENGATE_MNEMONIC(),
-  });
+  const winterEvent = new EventFactory(
+    NETWORK(),
+    ZENGATE_MNEMONIC(),
+    provider,
+    provider,
+    provider,
+  );
 
-  const walletAddress = await winterEvent.getWalletAddress();
-
-  const walletAddressPK = winterEvent.getAddressPK(walletAddress);
+  const walletAddressPK = winterEvent.getAddressPkHash();
 
   await winterEvent.setObjectContract({
-    protocolVersion: BigInt(1),
-    dataReference: Buffer.from(job.data.metadataReference, 'utf8').toString(
+    protocolVersion: 1,
+    dataReferenceHex: Buffer.from(job.data.metadataReference, 'utf8').toString(
       'hex',
     ),
-    eventCreationInfo: Buffer.from('', 'utf8').toString('hex'),
-    signers: [walletAddressPK],
+    eventCreationInfoTxHash: Buffer.from('', 'utf8').toString('hex'),
+    signersPkHash: [walletAddressPK],
   });
 
   const finalUtxos = submit
     ? await getWalletUtxosWithRetry(winterEvent, 6)
     : await winterEvent.getWalletUtxos();
-
-  const completeTx = await winterEvent.mintSingleton(
+  console.log('finalUtxos: ', finalUtxos);
+  console.log('before complete tx');
+  const unsignedTx = await winterEvent.mintSingleton(
     job.data.tokenName,
     finalUtxos,
   );
+  console.log('unsignedTx: ', unsignedTx);
 
-  const signedTx = await winterEvent.signTx(completeTx);
+  const signedTx = await winterEvent.signTx(unsignedTx);
 
   logger.debug(`Mint signed tx: ${signedTx}`);
 
   if (submit) {
-    return submitTx(signedTx);
+    //return submitTx(signedTx);
+    return await winterEvent.submitTx(signedTx);
   }
 }
 

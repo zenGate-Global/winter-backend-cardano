@@ -11,7 +11,7 @@ import { NETWORK } from '../constants';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service';
-import { getEventDatum, Koios } from 'winter-cardano-mesh';
+import { EventFactory, Koios } from 'winter-cardano-mesh';
 import { ObjectDatum } from 'winter-cardano-mesh/src/models';
 import { CheckStatus, CheckType } from '../check/entities/check.entity';
 
@@ -50,7 +50,9 @@ export class PalmyraService {
       });
     }
     try {
-      return datums.map((d: string) => getEventDatum(d));
+      return datums.map((d: string) =>
+        EventFactory.getObjectDatumFromPlutusData(d),
+      );
     } catch (error) {
       this.logger.error(`datum decode error: ${error}`);
       throw new BadRequestException({

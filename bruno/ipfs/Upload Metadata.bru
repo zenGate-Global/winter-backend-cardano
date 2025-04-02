@@ -1,0 +1,28 @@
+meta {
+  name: Upload Metadata
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{winter}}/ipfs
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "version": "2.0.0-alpha",
+    "eventType": "object",
+    "eventTime": "2025-03-31T14:30:00Z",
+    "eventId": "",
+    "inputItems": [
+      {
+        "itemId": "test2",
+        "itemEventId": "test123",
+        "itemQuantity": 500,
+        "uom": "kg"
+      }
+    ]
+  }
+}

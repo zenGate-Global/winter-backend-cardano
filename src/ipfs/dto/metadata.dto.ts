@@ -6,6 +6,7 @@ import {
   IsString,
   IsIn,
   IsArray,
+  IsNumber,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Transform } from 'class-transformer';
@@ -31,55 +32,83 @@ class MetadataValue {
   value: string | MetadataValue[];
 }
 
+class TransactionInfo {
+  @IsString()
+  @IsNotEmpty()
+  @ApiProperty({ description: 'Buyer identifier.', example: '1234567890' })
+  buyerId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @ApiProperty({ description: 'Currency code.', example: '0987654321' })
+  currencyCode: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @ApiProperty({
+    description: 'Zone code of transactions.',
+    example: '0987654321',
+  })
+  zoneCode: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  @ApiProperty({
+    description: 'Total amount of daily transactions.',
+    example: 1000,
+  })
+  totalAmount: number;
+}
+
+class ReadPoint {
+  @IsString()
+  @IsNotEmpty()
+  @ApiProperty({ description: 'Read point ID.', example: 'MWA' })
+  id: string;
+}
+
 class InputItem {
   @IsNotEmpty()
-  @ApiProperty({ description: 'Item identifier', example: '<identifier>' })
-  itemIdentifier: string;
+  @ApiProperty({ description: 'Item identifier.', example: '<identifier>' })
+  itemId: string;
 
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Item event ID', example: '<tokenId>' })
+  @IsOptional()
+  @ApiProperty({ description: 'Item event ID.', example: '<tokenId>' })
   itemEventId: string;
 
   @IsNotEmpty()
-  @ApiProperty({ description: 'Item quantity', example: 500 })
+  @ApiProperty({ description: 'Item quantity.', example: 500 })
   itemQuantity: number;
 
   @IsOptional()
   @IsNotEmpty()
-  @ApiProperty({ description: 'Item unit', example: 'kilograms' })
-  unit: string | null;
+  @ApiProperty({
+    description: 'Item unit of measurement.',
+    example: 'kilograms',
+  })
+  uom: string | null;
 }
 
 class OutputItem {
   @IsNotEmpty()
-  @ApiProperty({ description: 'Item identifier', example: '<identifier>' })
-  itemIdentifier: string;
+  @ApiProperty({ description: 'Item identifier.', example: '<identifier>' })
+  itemId: string;
 
   @IsNotEmpty()
-  @ApiProperty({ description: 'Item quantity', example: 500 })
+  @ApiProperty({ description: 'Item quantity.', example: 500 })
   itemQuantity: number;
 
   @IsOptional()
   @IsString()
-  @ApiProperty({ description: 'Item unit', example: 'null' })
-  unit: string | null;
+  @ApiProperty({ description: 'Item unit of measurement.', example: 'null' })
+  uom: string | null;
 }
 
 export class EventDto {
   @IsNotEmpty()
-  @ApiProperty({ description: 'Event name', example: 'Green Tea' })
-  name: string;
-
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Event version', example: 1.0 })
-  version: number;
-
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Event creation date',
-    example: '2023-05-26T14:30:00Z',
-  })
-  creationDate: string;
+  @ApiProperty({ description: 'Event version.', example: '1.0.0' })
+  @IsIn(['1.0.0', '2.0.0-alpha'])
+  version: string;
 
   @IsNotEmpty()
   @IsString()
@@ -91,38 +120,74 @@ export class EventDto {
     'association',
     'transaction',
   ])
-  @ApiProperty({ description: 'Event type', example: 'object' })
+  @ApiProperty({ description: 'Event type.', example: 'object' })
   eventType: string;
+
+  @IsNotEmpty()
+  @ApiProperty({
+    description: 'Event creation time.',
+    example: '2023-05-26T14:30:00Z',
+  })
+  eventTime: string;
 
   @IsOptional()
   @IsString()
-  @ApiProperty({ description: 'Event ID', example: '' })
+  @ApiProperty({ description: 'Event ID.', example: '' })
   eventId: string;
 
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Id of parent aggregation.',
+    example: 'BATCH-001',
+  })
+  parentId: string;
+
   @IsArray()
-  @IsNotEmpty()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => OutputItem)
+  @ApiProperty({
+    description: 'Child items of parent aggregation.',
+    type: [OutputItem],
+  })
+  childItems: OutputItem[];
+
+  @IsArray()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => InputItem)
   @ApiProperty({
-    description: 'Input items',
+    description: 'Input items.',
     type: [InputItem],
   })
   inputItems: InputItem[];
 
   @IsArray()
-  @IsNotEmpty()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => OutputItem)
-  @ApiProperty({ description: 'Output items', type: [OutputItem] })
+  @ApiProperty({ description: 'Output items.', type: [OutputItem] })
   outputItems: OutputItem[];
 
-  @IsNotEmpty()
-  @IsArray()
+  @IsOptional()
+  @Type(() => ReadPoint)
   @ValidateNested({ each: true })
-  @Type(() => MetadataValue)
+  @ApiProperty({ description: 'Event read point.', type: ReadPoint })
+  readPoint: ReadPoint;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @ApiProperty({ description: 'Event transaction information.' })
+  transactionInfo: TransactionInfo;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  //@Type(() => MetadataValue)
   @ApiProperty({
-    description: 'Event metadata',
-    type: [MetadataValue],
+    description: 'Event metadata.',
+    type: 'object',
+    additionalProperties: { type: 'string' },
   })
-  metadata: MetadataValue[];
+  metadata: Record<string, string>;
 }
