@@ -11,8 +11,7 @@ import { NETWORK } from '../constants';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service';
-import { EventFactory, Koios } from 'winter-cardano-mesh';
-import { ObjectDatum } from 'winter-cardano-mesh/src/models';
+import { EventFactory, Koios, ObjectDatumFields } from 'winter-cardano-mesh';
 import { CheckStatus, CheckType } from '../check/entities/check.entity';
 
 /* eslint-disable  @typescript-eslint/no-non-null-assertion */
@@ -36,8 +35,8 @@ export class PalmyraService {
 
   private readonly koios = new Koios(this.configService.get('KOIOS_BASE_URL'));
 
-  async getDataByTokenIds(tokenIds: string[]): Promise<ObjectDatum[]> {
-    let datums;
+  async getDataByTokenIds(tokenIds: string[]): Promise<ObjectDatumFields[]> {
+    let datums: string[];
     try {
       datums = (await this.koios.assetUtxos(tokenIds)).map(
         (utxo) => utxo.inline_datum.bytes,
@@ -51,7 +50,7 @@ export class PalmyraService {
     }
     try {
       return datums.map((d: string) =>
-        EventFactory.getObjectDatumFromPlutusData(d),
+        EventFactory.getObjectDatumFieldsFromPlutusCbor(d),
       );
     } catch (error) {
       this.logger.error(`datum decode error: ${error}`);
