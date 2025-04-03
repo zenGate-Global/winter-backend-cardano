@@ -72,9 +72,13 @@ export async function buildRecreate(
 ): Promise<string | void> {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
-  const winterEvent = new EventFactory(NETWORK(), provider, {
-    seed: ZENGATE_MNEMONIC(),
-  });
+  const winterEvent = new EventFactory(
+    NETWORK(),
+    ZENGATE_MNEMONIC(),
+    provider,
+    provider,
+    provider,
+  );
 
   const walletAddress = await winterEvent.getWalletAddress();
 
@@ -98,7 +102,8 @@ export async function buildRecreate(
   logger.debug(`Recreation signed tx: ${signedTx}`);
 
   if (submit) {
-    return submitTx(signedTx);
+    // return submitTx(signedTx);
+    return await winterEvent.submitTx(signedTx);
   }
 }
 
@@ -109,9 +114,13 @@ export async function buildSpend(
 ): Promise<string | void> {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
-  const winterEvent = new EventFactory(NETWORK(), provider, {
-    seed: ZENGATE_MNEMONIC(),
-  });
+  const winterEvent = new EventFactory(
+    NETWORK(),
+    ZENGATE_MNEMONIC(),
+    provider,
+    provider,
+    provider,
+  );
 
   const walletAddress = await winterEvent.getWalletAddress();
 
@@ -134,7 +143,8 @@ export async function buildSpend(
   logger.debug(`Spend signed tx: ${signedTx}`);
 
   if (submit) {
-    return submitTx(signedTx);
+    // return submitTx(signedTx);
+    return await winterEvent.submitTx(signedTx);
   }
 }
 
