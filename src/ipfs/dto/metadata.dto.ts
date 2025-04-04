@@ -270,6 +270,7 @@ class SensorElement {
 }
 
 type ILMD = Record<string, string>;
+type TransformationID = string;
 
 export class Event {
 
@@ -369,7 +370,7 @@ export class ObjectEvent extends Event {
 
   @IsOptional()
   @ValidateNested({ each: true })
-  sensorElement: SensorElement[];
+  sensorElementList: SensorElement[];
 
 }
 
@@ -429,6 +430,41 @@ export class TransactionEvent extends Event {
   bizTransactionList: BusinessTransaction[];
 
   @IsOptional()
+  @IsString()
+  parentID: Item;
+
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  itemList: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  quantityList: QuantityElement[];
+
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(['ADD', 'OBSERVE', 'DELETE'])
+  action: Action;
+
+  @IsOptional()
+  @IsString()
+  bizStep: BusinessStepID;
+
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested()
+  readPoint: ReadPointID
+
+  @IsOptional()
+  @ValidateNested()
+  bizLocation: BusinessLocationID;
+
+  @IsOptional()
   @ValidateNested({ each: true })
   sourceList: Source[];
 
@@ -437,10 +473,78 @@ export class TransactionEvent extends Event {
   destinationList: Destination[];
 
   @IsOptional()
-  @IsString()
-  parentID: Item;
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];
 
 }
+
+export class TransformationEvent extends Event {
+
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  inputItemList: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  inputQuantityList: QuantityElement[];
+
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  outputItemList: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  outputQuantityList: QuantityElement[];
+
+  @IsOptional()
+  @IsString()
+  transormationID: TransformationID;
+
+  @IsOptional()
+  @IsString()
+  bizStep: BusinessStepID;
+
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested()
+  persistentDisposition: PersistentDisposition;
+
+  @IsOptional()
+  @ValidateNested()
+  readPoint: ReadPointID
+
+  @IsOptional()
+  @ValidateNested()
+  bizLocation: BusinessLocationID;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  bizTransactionList: BusinessTransaction[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sourceList: Source[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  destinationList: Destination[];
+
+  @IsOptional()
+  ilmd: ILMD;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];  
+
+}
+
 
   @IsArray()
   @IsOptional()
