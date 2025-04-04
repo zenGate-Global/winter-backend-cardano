@@ -1,8 +1,6 @@
 import { IsNotEmpty } from 'class-validator';
-import { Event } from './metadata.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class StoreIpfsDto extends Event {}
 export class StoreIpfsResponseDto {
   @IsNotEmpty()
   @ApiProperty({
