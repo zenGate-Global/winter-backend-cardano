@@ -7,9 +7,11 @@ import {
   IsIn,
   IsArray,
   IsNumber,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Transform } from 'class-transformer';
+import e from 'express';
 
 type WinterVersion = '1.0.0' | '2.0.0-alpha';
 type EventType =
@@ -21,14 +23,19 @@ type EventType =
 type EventID = string;
 type Action = 'ADD' | 'OBSERVE' | 'DELETE';
 type UOM = 'kg' | 'g' | 'lb' | 'oz' | 'l' | 'ml' | 'm3' | 'cm3' | 'ft3' | 'in3';
-type LocationID = string;
-type ReadPointID = LocationID;
-type BusinessLocationID = LocationID;
+class LocationID {
+  @IsNotEmpty()
+  @IsString()
+  id: string;
+}
+class ReadPointID extends LocationID {};
+class BusinessLocationID extends LocationID {};Z
+type BusinessStepID = string;
 type DispositionID = string;
 type BusinessTransactionTypeID = string;
 type ItemClass = string;
 type SourceDestTypeID = string;
-type SourceDestID = LocationID;
+class SourceDestID extends LocationID {};
 type PartyID = string;
 type ErrorReasonID = string;
 type SensorPropertyTypeID = string;
@@ -39,103 +46,252 @@ type Item = string;
 type DateTimeStamp = `${number}-${number}-${number}T${number}:${number}:${number}.${number}Z`; // ISO-8601 format
 type BusinessTransactionID = string;
 
-type QuantityElement = {
-  itemClass: ItemClass,
-  quantity?: number,
-  uom?: UOM
+class QuantityElement {
+  @IsNotEmpty()
+  @IsString()
+  itemClass: ItemClass;
+
+  @IsOptional()
+  @IsNumber()
+  quantity: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn([
+    'kg',
+    'g',
+    'lb',
+    'oz',
+    'l',
+    'ml',
+    'm3',
+    'cm3',
+    'ft3',
+    'in3',
+  ])
+  uom: UOM;
 }
 
-type ErrorDeclaration = {
-  declarationTime: DateTimeStamp,
-  reason?: ErrorReasonID,
-  correctiveEventIDs?: EventID[],
+class ErrorDeclaration {
+
+  @IsNotEmpty()
+  @IsString() 
+  declarationTime: DateTimeStamp;
+
+  @IsOptional()
+  @IsString()
+  reason: ErrorReasonID;
+  
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  correctiveEventIDs: EventID[];
 }
 
-type PersistentDisposition = {
-  set: DispositionID[],
-  unset: DispositionID[]
+class PersistentDisposition {
+  @IsNotEmpty()
+  @IsString({
+    each: true,
+  })
+  set: DispositionID[];
+
+  @IsNotEmpty()
+  @IsString({
+    each: true,
+  })
+  unset: DispositionID[];
 }
 
-type BusinessTransaction = {
-  type?: BusinessTransactionTypeID,
+class BusinessTransaction {
+  @IsOptional()
+  @IsString()
+  type: BusinessTransactionTypeID;
+  
+  @IsNotEmpty()
+  @IsString()
   bizTransaction: BusinessTransactionID
 }
 
-type Source = {
-  type?: SourceDestTypeID,
-  source: SourceDestID
+class Source {
+  @IsOptional()
+  @IsString()
+  type: SourceDestTypeID;
+
+  @IsNotEmpty()
+  @IsString()
+  source: SourceDestID;
 }
 
-type Destination = {
-  type?: SourceDestTypeID,
-  destination: SourceDestID
+class Destination {
+  @IsOptional()
+  @IsString()
+  type: SourceDestTypeID;
+
+  @IsNotEmpty()
+  @IsString()
+  destination: SourceDestID;
 }
 
-type SensorMetadata = {
-  time?: DateTimeStamp,
-  startTime?: DateTimeStamp,
-  endTime?: DateTimeStamp,
-  deviceID?: Item,
-  deviceMetadata?: ResourceID,
-  rawData?: ResourceID,
-  dataProcessingMethod?: ResourceID,
-  bizRules?: ResourceID,
+class SensorMetadata {
+  @IsOptional()
+  @IsString()
+  time: DateTimeStamp;  @IsNotEmpty()
+
+  @IsOptional()
+  @IsString()
+  startTime: DateTimeStamp;
+
+  @IsOptional()
+  @IsString()
+  endTime: DateTimeStamp;
+
+  @IsOptional()
+  @IsString()
+  deviceID: Item;
+
+  @IsOptional()
+  @IsString()
+  deviceMetadata: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  rawData: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  dataProcessingMethod: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  bizRules: ResourceID;
+
 }
 
-type SensorReport = {
-  type?: SensorPropertyTypeID,
-  exception?: string,
-  deviceID?: Item,
-  deviceMetadata?: ResourceID,
-  rawData?: ResourceID,
-  dataProcessingMethod?: ResourceID,
-  time?: DateTimeStamp,
-  mircroorganism?: MircroorganismID,
-  chemicalSubstance?: ChemicalSubstanceID,
-  value?: number,
-  component?: string,
-  stringValue?: string,
-  booleanValue?: boolean,
-  hexBinaryValue?: string,
-  uriValue?: string,
-  minValue?: number,
-  maxValue?: number,
-  meanValue?: number,
-  sDev?: number,
-  percRank?: number,
-  percValue?: number,
-  uom?: UOM,
-  coordinateReferenceSystem?: string,
+class SensorReport {
+  @IsOptional()
+  @IsString()
+  type: SensorPropertyTypeID;
+
+  @IsOptional()
+  @IsString()
+  exception: string;
+
+  @IsOptional()
+  @IsString()
+  deviceID: Item;
+
+  @IsOptional()
+  @IsString()
+  deviceMetadata: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  rawData: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  dataProcessingMethod: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  time: DateTimeStamp;
+
+  @IsString()
+  mircroorganism: MircroorganismID;
+
+  @IsOptional()
+  @IsString()
+  chemicalSubstance: ChemicalSubstanceID;
+
+  @IsOptional()
+  @IsNumber()
+  value: number;
+
+  @IsOptional()
+  @IsString()
+  component: string;
+
+  @IsOptional()
+  @IsString()
+  stringValue: string;
+
+  @IsOptional()
+  @IsBoolean()
+  booleanValue: boolean;
+
+  @IsOptional()
+  @IsString()
+  hexBinaryValue: string;
+
+  @IsOptional()
+  @IsString()
+  uriValue: string;
+
+  @IsOptional()
+  @IsNumber()
+  minValue: number;
+
+  @IsOptional()
+  @IsNumber()
+  maxValue: number;
+
+  @IsOptional()
+  @IsNumber()
+  meanValue: number;
+
+  @IsOptional()
+  @IsNumber()
+  sDev: number;
+
+  @IsOptional()
+  @IsNumber()
+  percRank: number;
+
+  @IsOptional()
+  @IsNumber()
+  percValue: number;
+
+  @IsOptional()
+  @IsString()
+  uom: UOM;
+
+  @IsOptional()
+  @IsString()
+  coordinateReferenceSystem?: string;
 }
 
-type SensorElement = {
-  sensorMetadata?: SensorMetadata,
-  sensorReport: SensorReport[]
-}
+class SensorElement {
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorMetadata: SensorMetadata;
+  
+  @IsNotEmpty()
+  @ValidateNested({ each: true })
+  sensorReport: SensorReport[];
+
+} 
 
 type ILMD = Record<string, string>;
 
 class ReadPoint {
   @IsNotEmpty()
-  @ApiProperty({
-    description: 'Read point location information.',
-    example: 'MWA',
-  })
-  id: ReadPointID;
+  @IsString()
+  id: ReadPointID;  @IsNotEmpty()
 }
 
 
 
 export class Event {
 
-  @IsNotEmpty()string
-  @ApiProperty({ description: 'Event version.', example: '1.0.0' })
+  @IsNotEmpty()
+  @IsString()
   @IsIn(['1.0.0', '2.0.0-alpha'])
   version: WinterVersion;
 
   @IsNotEmpty()
   @IsString()
-  @ApiProperty({ description: 'Event type.', example: 'object' })
   @IsIn([
     'ObjectEvent',
     'AggregationEvent',
@@ -146,28 +302,73 @@ export class Event {
   eventType: EventType;
 
   @IsNotEmpty()
+  @IsString()
   eventTime: DateTimeStamp;
 
   @IsOptional()
+  @IsString()
   recordTime: DateTimeStamp;
 
   @IsNotEmpty()
+  @IsString()
   eventTimeZoneOffset: string;
 
   @IsOptional()
+  @IsString()
   eventID: EventID;
 
   @IsOptional()
+  @ValidateNested({ each: true })
   errorDeclaration: ErrorDeclaration;
 
   @IsOptional()
+  @IsString()
   certificationInfo: string;
 
 }
 
 export class ObjectEvent extends Event {
 
-  
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  itemList: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  quantityList: QuantityElement[];
+
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(['ADD', 'OBSERVE', 'DELETE'])
+  action: Action;
+
+  @IsOptional()
+  @IsString()
+  bizStep: BusinessStepID;
+
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  persistentDisposition: PersistentDisposition;
+
+  readPoint: ReadPointID
+
+  @IsOptional()
+  source: Source;
+
+  @IsOptional()
+  destination: Destination;
+
+  @IsOptional()
+  sensorElement: SensorElement;
+
+  @IsOptional()
+  ilmd: ILMD;
 
 }
 
