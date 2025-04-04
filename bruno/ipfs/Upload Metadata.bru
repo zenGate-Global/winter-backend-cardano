@@ -12,17 +12,27 @@ post {
 
 body:json {
   {
-    "version": "2.0.0-alpha",
-    "eventType": "object",
-    "eventTime": "2025-03-31T14:30:00Z",
-    "eventId": "",
-    "inputItems": [
-      {
-        "itemId": "test2",
-        "itemEventId": "test123",
-        "itemQuantity": 500,
-        "uom": "kg"
+      "winterProtocolVersion": "2.0.0-alpha",
+      "type": "ObjectEvent",
+      "eventTime": "December 2023",
+      "quantityList": [
+          {
+              "itemClass": "Harv-Kalamata-Dec-24"
+          }
+      ],
+      "action": "ADD",
+      "bizStep": "harvesting",
+      "readPoint": {
+          "id": "Aristodimeio, Messinia Region, Greece"
+      },
+      "bizLocation": {
+          "id": "LIORIZA-STAVROPOULOS ESTATE L.P."
+      },
+      "ilmd": {
+          "oliveOilType": "Extra Virgin",
+          "oliveOilSubType": "Cold Pressed",
+          "expirationDate": "2026-06-30",
+          "harvestMethod": "Hand Picked"
       }
-    ]
   }
 }

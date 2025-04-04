@@ -5,189 +5,603 @@ import {
   IsOptional,
   IsString,
   IsIn,
-  IsArray,
   IsNumber,
+  IsBoolean,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-import { Transform } from 'class-transformer';
 
-class MetadataValue {
+type WinterVersion = '1.0.0' | '2.0.0-alpha';
+type EventType =
+  | 'ObjectEvent'
+  | 'AggregationEvent'
+  | 'TransformationEvent'
+  | 'AssociationEvent'
+  | 'TransactionEvent';
+type EventID = string;
+type Action = 'ADD' | 'OBSERVE' | 'DELETE';
+type UOM = 'kg' | 'g' | 'lb' | 'oz' | 'l' | 'ml' | 'm3' | 'cm3' | 'ft3' | 'in3';
+class LocationID {
   @IsNotEmpty()
-  @ApiProperty({ description: 'Metadata key', example: 'Location' })
-  key: string;
-
-  @IsOptional()
   @IsString()
-  @ApiProperty({ description: 'Metadata unit', example: 'kilogram' })
-  unit: string | null;
-
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Metadata value',
-    oneOf: [
-      { type: 'string', example: '7.2905° N, 80.6337° E' },
-      { type: 'array', items: { $ref: '#/components/schemas/MetadataValue' } },
-    ],
-  })
-  value: string | MetadataValue[];
-}
-
-class TransactionInfo {
-  @IsString()
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Buyer identifier.', example: '1234567890' })
-  buyerId: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Currency code.', example: '0987654321' })
-  currencyCode: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Zone code of transactions.',
-    example: '0987654321',
-  })
-  zoneCode: string;
-
-  @IsNumber()
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Total amount of daily transactions.',
-    example: 1000,
-  })
-  totalAmount: number;
-}
-
-class ReadPoint {
-  @IsString()
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Read point ID.', example: 'MWA' })
   id: string;
 }
+class ReadPointID extends LocationID {}
+class BusinessLocationID extends LocationID {}
+type BusinessStepID = string;
+type DispositionID = string;
+type BusinessTransactionTypeID = string;
+type ItemClass = string;
+type SourceDestTypeID = string;
+class SourceDestID extends LocationID {}
+type PartyID = string;
+type ErrorReasonID = string;
+type SensorPropertyTypeID = string;
+type MircroorganismID = string;
+type ChemicalSubstanceID = string;
+type ResourceID = string;
+type Item = string;
+type DateTimeStamp =
+  | string
+  | `${number}-${number}-${number}T${number}:${number}:${number}.${number}Z`; // ISO-8601 format
+type BusinessTransactionID = string;
 
-class InputItem {
+class QuantityElement {
   @IsNotEmpty()
-  @ApiProperty({ description: 'Item identifier.', example: '<identifier>' })
-  itemId: string;
+  @IsString()
+  itemClass: ItemClass;
 
   @IsOptional()
-  @ApiProperty({ description: 'Item event ID.', example: '<tokenId>' })
-  itemEventId: string;
-
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Item quantity.', example: 500 })
-  itemQuantity: number;
-
-  @IsOptional()
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Item unit of measurement.',
-    example: 'kilograms',
-  })
-  uom: string | null;
-}
-
-class OutputItem {
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Item identifier.', example: '<identifier>' })
-  itemId: string;
-
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Item quantity.', example: 500 })
-  itemQuantity: number;
+  @IsNumber()
+  quantity: number;
 
   @IsOptional()
   @IsString()
-  @ApiProperty({ description: 'Item unit of measurement.', example: 'null' })
-  uom: string | null;
+  @IsIn(['kg', 'g', 'lb', 'oz', 'l', 'ml', 'm3', 'cm3', 'ft3', 'in3'])
+  uom: UOM;
 }
 
-export class EventDto {
+class ErrorDeclaration {
   @IsNotEmpty()
-  @ApiProperty({ description: 'Event version.', example: '1.0.0' })
+  @IsString()
+  declarationTime: DateTimeStamp;
+
+  @IsOptional()
+  @IsString()
+  reason: ErrorReasonID;
+
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  correctiveEventIDs: EventID[];
+}
+
+class PersistentDisposition {
+  @IsNotEmpty()
+  @IsString({
+    each: true,
+  })
+  set: DispositionID[];
+
+  @IsNotEmpty()
+  @IsString({
+    each: true,
+  })
+  unset: DispositionID[];
+}
+
+class BusinessTransaction {
+  @IsOptional()
+  @IsString()
+  type: BusinessTransactionTypeID;
+
+  @IsNotEmpty()
+  @IsString()
+  bizTransaction: BusinessTransactionID;
+}
+
+class Source {
+  @IsOptional()
+  @IsString()
+  type: SourceDestTypeID;
+
+  @IsNotEmpty()
+  @ValidateNested()
+  source: SourceDestID;
+}
+
+class Destination {
+  @IsOptional()
+  @IsString()
+  type: SourceDestTypeID;
+
+  @IsNotEmpty()
+  @ValidateNested()
+  destination: SourceDestID;
+}
+
+class SensorMetadata {
+  @IsOptional()
+  @IsString()
+  time: DateTimeStamp;
+  @IsNotEmpty()
+  @IsOptional()
+  @IsString()
+  startTime: DateTimeStamp;
+
+  @IsOptional()
+  @IsString()
+  endTime: DateTimeStamp;
+
+  @IsOptional()
+  @IsString()
+  deviceID: Item;
+
+  @IsOptional()
+  @IsString()
+  deviceMetadata: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  rawData: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  dataProcessingMethod: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  bizRules: ResourceID;
+}
+
+class SensorReport {
+  @IsOptional()
+  @IsString()
+  type: SensorPropertyTypeID;
+
+  @IsOptional()
+  @IsString()
+  exception: string;
+
+  @IsOptional()
+  @IsString()
+  deviceID: Item;
+
+  @IsOptional()
+  @IsString()
+  deviceMetadata: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  rawData: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  dataProcessingMethod: ResourceID;
+
+  @IsOptional()
+  @IsString()
+  time: DateTimeStamp;
+
+  @IsString()
+  mircroorganism: MircroorganismID;
+
+  @IsOptional()
+  @IsString()
+  chemicalSubstance: ChemicalSubstanceID;
+
+  @IsOptional()
+  @IsNumber()
+  value: number;
+
+  @IsOptional()
+  @IsString()
+  component: string;
+
+  @IsOptional()
+  @IsString()
+  stringValue: string;
+
+  @IsOptional()
+  @IsBoolean()
+  booleanValue: boolean;
+
+  @IsOptional()
+  @IsString()
+  hexBinaryValue: string;
+
+  @IsOptional()
+  @IsString()
+  uriValue: string;
+
+  @IsOptional()
+  @IsNumber()
+  minValue: number;
+
+  @IsOptional()
+  @IsNumber()
+  maxValue: number;
+
+  @IsOptional()
+  @IsNumber()
+  meanValue: number;
+
+  @IsOptional()
+  @IsNumber()
+  sDev: number;
+
+  @IsOptional()
+  @IsNumber()
+  percRank: number;
+
+  @IsOptional()
+  @IsNumber()
+  percValue: number;
+
+  @IsOptional()
+  @IsString()
+  uom: UOM;
+
+  @IsOptional()
+  @IsString()
+  coordinateReferenceSystem?: string;
+}
+
+class SensorElement {
+  @IsOptional()
+  @ValidateNested()
+  sensorMetadata: SensorMetadata;
+
+  @IsNotEmpty()
+  @ValidateNested({ each: true })
+  sensorReport: SensorReport[];
+}
+
+type ILMD = Record<string, string>;
+type TransformationID = string;
+
+export class Event {
+  @IsNotEmpty()
+  @IsString()
   @IsIn(['1.0.0', '2.0.0-alpha'])
-  version: string;
+  winterProtocolVersion: WinterVersion;
 
   @IsNotEmpty()
   @IsString()
-  @Transform(({ value }) => value.toLowerCase())
   @IsIn([
-    'object',
-    'aggregation',
-    'transformation',
-    'association',
-    'transaction',
+    'ObjectEvent',
+    'AggregationEvent',
+    'TransformationEvent',
+    'AssociationEvent',
+    'TransactionEvent',
   ])
-  @ApiProperty({ description: 'Event type.', example: 'object' })
-  eventType: string;
+  type: EventType;
 
   @IsNotEmpty()
-  @ApiProperty({
-    description: 'Event creation time.',
-    example: '2023-05-26T14:30:00Z',
-  })
-  eventTime: string;
+  @IsString()
+  eventTime: DateTimeStamp;
 
   @IsOptional()
   @IsString()
-  @ApiProperty({ description: 'Event ID.', example: '' })
-  eventId: string;
+  recordTime: DateTimeStamp;
+
+  //@IsNotEmpty()
+  @IsOptional()
+  @IsString()
+  eventTimeZoneOffset: string;
 
   @IsOptional()
   @IsString()
-  @ApiProperty({
-    description: 'Id of parent aggregation.',
-    example: 'BATCH-001',
-  })
-  parentId: string;
-
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => OutputItem)
-  @ApiProperty({
-    description: 'Child items of parent aggregation.',
-    type: [OutputItem],
-  })
-  childItems: OutputItem[];
-
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => InputItem)
-  @ApiProperty({
-    description: 'Input items.',
-    type: [InputItem],
-  })
-  inputItems: InputItem[];
-
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => OutputItem)
-  @ApiProperty({ description: 'Output items.', type: [OutputItem] })
-  outputItems: OutputItem[];
+  eventID: EventID;
 
   @IsOptional()
-  @Type(() => ReadPoint)
-  @ValidateNested({ each: true })
-  @ApiProperty({ description: 'Event read point.', type: ReadPoint })
-  readPoint: ReadPoint;
+  @ValidateNested()
+  errorDeclaration: ErrorDeclaration;
 
   @IsOptional()
-  @ValidateNested({ each: true })
-  @ApiProperty({ description: 'Event transaction information.' })
-  transactionInfo: TransactionInfo;
-
-  @IsOptional()
-  @ValidateNested({ each: true })
-  //@Type(() => MetadataValue)
-  @ApiProperty({
-    description: 'Event metadata.',
-    type: 'object',
-    additionalProperties: { type: 'string' },
-  })
-  metadata: Record<string, string>;
+  @IsString()
+  certificationInfo: string;
 }
+
+export class ObjectEvent extends Event {
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  itemList: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  quantityList: QuantityElement[];
+
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(['ADD', 'OBSERVE', 'DELETE'])
+  action: Action;
+
+  @IsOptional()
+  @IsString()
+  bizStep: BusinessStepID;
+
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested()
+  persistentDisposition: PersistentDisposition;
+
+  @IsOptional()
+  @ValidateNested()
+  readPoint: ReadPointID;
+
+  @IsOptional()
+  @ValidateNested()
+  bizLocation: BusinessLocationID;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  bizTransactionList: BusinessTransaction[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sourceList: Source[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  destinationList: Destination[];
+
+  @IsOptional()
+  ilmd: ILMD;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];
+}
+
+export class AggregationEvent extends Event {
+  @IsOptional()
+  @IsString()
+  parentID: Item;
+
+  @IsOptional()
+  @IsString({ each: true })
+  childItems: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  childQuantityList: QuantityElement[];
+
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(['ADD', 'OBSERVE', 'DELETE'])
+  action: Action;
+
+  @IsOptional()
+  @IsString()
+  bizStep: BusinessStepID;
+
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested()
+  readPoint: ReadPointID;
+
+  @IsOptional()
+  @ValidateNested()
+  bizLocation: BusinessLocationID;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  bizTransactionList: BusinessTransaction[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sourceList: Source[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  destinationList: Destination[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];
+}
+
+export class TransactionEvent extends Event {
+  @IsOptional()
+  @ValidateNested({ each: true })
+  bizTransactionList: BusinessTransaction[];
+
+  @IsOptional()
+  @IsString()
+  parentID: Item;
+
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  itemList: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  quantityList: QuantityElement[];
+
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(['ADD', 'OBSERVE', 'DELETE'])
+  action: Action;
+
+  @IsOptional()
+  @IsString()
+  bizStep: BusinessStepID;
+
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested()
+  readPoint: ReadPointID;
+
+  @IsOptional()
+  @ValidateNested()
+  bizLocation: BusinessLocationID;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sourceList: Source[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  destinationList: Destination[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];
+}
+
+export class TransformationEvent extends Event {
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  inputItemList: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  inputQuantityList: QuantityElement[];
+
+  @IsOptional()
+  @IsString({
+    each: true,
+  })
+  outputItemList: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  outputQuantityList: QuantityElement[];
+
+  @IsOptional()
+  @IsString()
+  transormationID: TransformationID;
+
+  @IsOptional()
+  @IsString()
+  bizStep: BusinessStepID;
+
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested()
+  persistentDisposition: PersistentDisposition;
+
+  @IsOptional()
+  @ValidateNested()
+  readPoint: ReadPointID;
+
+  @IsOptional()
+  @ValidateNested()
+  bizLocation: BusinessLocationID;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  bizTransactionList: BusinessTransaction[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sourceList: Source[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  destinationList: Destination[];
+
+  @IsOptional()
+  ilmd: ILMD;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];
+}
+
+export class AssociationEvent extends Event {
+  @IsOptional()
+  @IsString()
+  parentID: Item;
+
+  @IsOptional()
+  @IsString({ each: true })
+  childItems: Item[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  childQuantityList: QuantityElement[];
+
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(['ADD', 'OBSERVE', 'DELETE'])
+  action: Action;
+
+  @IsOptional()
+  @IsString()
+  bizStep: BusinessStepID;
+
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested()
+  readPoint: ReadPointID;
+
+  @IsOptional()
+  @ValidateNested()
+  bizLocation: BusinessLocationID;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  bizTransactionList: BusinessTransaction[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sourceList: Source[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  destinationList: Destination[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];
+}
+
+// class TransactionInfo {
+//   @IsString()
+//   @IsNotEmpty()
+//   @ApiProperty({ description: 'Buyer information.', example: '1234567890' })
+//   buyer: string;
+
+//   @IsString()
+//   @IsNotEmpty()
+//   @ApiProperty({ description: 'Currency code.', example: '0987654321' })
+//   currencyCode: string;
+
+//   @IsString() zoneCode;
+//   @IsNotEmpty()
+//   @ApiProperty({
+//     description: 'Location of transaction(s).',
+//     example: '0987654321',
+//   })
+//   location: string;
+
+//   @IsNumber()
+//   @IsNotEmpty()
+//   @ApiProperty({
+//     description: 'Total amount of daily transactions.',
+//     example: 1000,
+//   })
+//   totalAmount: number;
+// }
