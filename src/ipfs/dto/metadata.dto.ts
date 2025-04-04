@@ -40,7 +40,8 @@ type ChemicalSubstanceID = string;
 type ResourceID = string;
 type Item = string;
 type DateTimeStamp =
-  `${number}-${number}-${number}T${number}:${number}:${number}.${number}Z`; // ISO-8601 format
+  | string
+  | `${number}-${number}-${number}T${number}:${number}:${number}.${number}Z`; // ISO-8601 format
 type BusinessTransactionID = string;
 
 class QuantityElement {
@@ -262,7 +263,7 @@ export class Event {
   @IsNotEmpty()
   @IsString()
   @IsIn(['1.0.0', '2.0.0-alpha'])
-  version: WinterVersion;
+  winterProtocolVersion: WinterVersion;
 
   @IsNotEmpty()
   @IsString()
@@ -273,7 +274,7 @@ export class Event {
     'AssociationEvent',
     'TransactionEvent',
   ])
-  eventType: EventType;
+  type: EventType;
 
   @IsNotEmpty()
   @IsString()
@@ -283,7 +284,8 @@ export class Event {
   @IsString()
   recordTime: DateTimeStamp;
 
-  @IsNotEmpty()
+  //@IsNotEmpty()
+  @IsOptional()
   @IsString()
   eventTimeZoneOffset: string;
 
