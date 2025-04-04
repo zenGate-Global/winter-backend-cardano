@@ -24,14 +24,14 @@ class LocationID {
   @IsString()
   id: string;
 }
-class ReadPointID extends LocationID {};
-class BusinessLocationID extends LocationID {};
+class ReadPointID extends LocationID {}
+class BusinessLocationID extends LocationID {}
 type BusinessStepID = string;
 type DispositionID = string;
 type BusinessTransactionTypeID = string;
 type ItemClass = string;
 type SourceDestTypeID = string;
-class SourceDestID extends LocationID {};
+class SourceDestID extends LocationID {}
 type PartyID = string;
 type ErrorReasonID = string;
 type SensorPropertyTypeID = string;
@@ -39,7 +39,8 @@ type MircroorganismID = string;
 type ChemicalSubstanceID = string;
 type ResourceID = string;
 type Item = string;
-type DateTimeStamp = `${number}-${number}-${number}T${number}:${number}:${number}.${number}Z`; // ISO-8601 format
+type DateTimeStamp =
+  `${number}-${number}-${number}T${number}:${number}:${number}.${number}Z`; // ISO-8601 format
 type BusinessTransactionID = string;
 
 class QuantityElement {
@@ -53,31 +54,19 @@ class QuantityElement {
 
   @IsOptional()
   @IsString()
-  @IsIn([
-    'kg',
-    'g',
-    'lb',
-    'oz',
-    'l',
-    'ml',
-    'm3',
-    'cm3',
-    'ft3',
-    'in3',
-  ])
+  @IsIn(['kg', 'g', 'lb', 'oz', 'l', 'ml', 'm3', 'cm3', 'ft3', 'in3'])
   uom: UOM;
 }
 
 class ErrorDeclaration {
-
   @IsNotEmpty()
-  @IsString() 
+  @IsString()
   declarationTime: DateTimeStamp;
 
   @IsOptional()
   @IsString()
   reason: ErrorReasonID;
-  
+
   @IsOptional()
   @IsString({
     each: true,
@@ -103,10 +92,10 @@ class BusinessTransaction {
   @IsOptional()
   @IsString()
   type: BusinessTransactionTypeID;
-  
+
   @IsNotEmpty()
   @IsString()
-  bizTransaction: BusinessTransactionID
+  bizTransaction: BusinessTransactionID;
 }
 
 class Source {
@@ -132,8 +121,8 @@ class Destination {
 class SensorMetadata {
   @IsOptional()
   @IsString()
-  time: DateTimeStamp;  @IsNotEmpty()
-
+  time: DateTimeStamp;
+  @IsNotEmpty()
   @IsOptional()
   @IsString()
   startTime: DateTimeStamp;
@@ -161,7 +150,6 @@ class SensorMetadata {
   @IsOptional()
   @IsString()
   bizRules: ResourceID;
-
 }
 
 class SensorReport {
@@ -238,7 +226,7 @@ class SensorReport {
 
   @IsOptional()
   @IsNumber()
-  sDev: number
+  sDev: number;
 
   @IsOptional()
   @IsNumber()
@@ -258,22 +246,19 @@ class SensorReport {
 }
 
 class SensorElement {
-
   @IsOptional()
   @ValidateNested()
   sensorMetadata: SensorMetadata;
-  
+
   @IsNotEmpty()
   @ValidateNested({ each: true })
   sensorReport: SensorReport[];
-
 }
 
 type ILMD = Record<string, string>;
 type TransformationID = string;
 
 export class Event {
-
   @IsNotEmpty()
   @IsString()
   @IsIn(['1.0.0', '2.0.0-alpha'])
@@ -313,11 +298,9 @@ export class Event {
   @IsOptional()
   @IsString()
   certificationInfo: string;
-
 }
 
 export class ObjectEvent extends Event {
-
   @IsOptional()
   @IsString({
     each: true,
@@ -347,7 +330,7 @@ export class ObjectEvent extends Event {
 
   @IsOptional()
   @ValidateNested()
-  readPoint: ReadPointID
+  readPoint: ReadPointID;
 
   @IsOptional()
   @ValidateNested()
@@ -371,11 +354,9 @@ export class ObjectEvent extends Event {
   @IsOptional()
   @ValidateNested({ each: true })
   sensorElementList: SensorElement[];
-
 }
 
 export class AggregationEvent extends Event {
-
   @IsOptional()
   @IsString()
   parentID: Item;
@@ -403,7 +384,7 @@ export class AggregationEvent extends Event {
 
   @IsOptional()
   @ValidateNested()
-  readPoint: ReadPointID
+  readPoint: ReadPointID;
 
   @IsOptional()
   @ValidateNested()
@@ -421,10 +402,12 @@ export class AggregationEvent extends Event {
   @ValidateNested({ each: true })
   destinationList: Destination[];
 
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];
 }
 
 export class TransactionEvent extends Event {
-
   @IsOptional()
   @ValidateNested({ each: true })
   bizTransactionList: BusinessTransaction[];
@@ -458,7 +441,7 @@ export class TransactionEvent extends Event {
 
   @IsOptional()
   @ValidateNested()
-  readPoint: ReadPointID
+  readPoint: ReadPointID;
 
   @IsOptional()
   @ValidateNested()
@@ -475,11 +458,9 @@ export class TransactionEvent extends Event {
   @IsOptional()
   @ValidateNested({ each: true })
   sensorElementList: SensorElement[];
-
 }
 
 export class TransformationEvent extends Event {
-
   @IsOptional()
   @IsString({
     each: true,
@@ -518,7 +499,7 @@ export class TransformationEvent extends Event {
 
   @IsOptional()
   @ValidateNested()
-  readPoint: ReadPointID
+  readPoint: ReadPointID;
 
   @IsOptional()
   @ValidateNested()
@@ -541,94 +522,84 @@ export class TransformationEvent extends Event {
 
   @IsOptional()
   @ValidateNested({ each: true })
-  sensorElementList: SensorElement[];  
-
+  sensorElementList: SensorElement[];
 }
 
-
-  @IsArray()
+export class AssociationEvent extends Event {
   @IsOptional()
-  @ValidateNested({ each: true })
-  @ApiProperty({
-    description: 'Input items.',
-    type: String,
-    isArray: true,string
-    description: 'Output items.',
-    type: String,
-    isArray: true,
-  })
-  outputItems: Item[];
+  @IsString()
+  parentID: Item;
 
   @IsOptional()
-  readPoint: ReadPoint;
-
-  @IsOptional()
-  transactionInfo: TransactionInfo;
+  @IsString({ each: true })
+  childItems: Item[];
 
   @IsOptional()
   @ValidateNested({ each: true })
-  //@Type(() => MetadataValue)
-  @ApiProperty({
-    description: 'Event metadata.',
-    type: 'object',
-    additionalProperties: { type: 'string' },
-  })
-  metadata: Record<string, string>;
+  childQuantityList: QuantityElement[];
 
-  // Dimension: WHAT
-  // Level: Instance
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @ApiProperty({
-    description: 'Items for object events.',
-    type: String,
-    isArray: true,
-  })
-  items: Item[];
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(['ADD', 'OBSERVE', 'DELETE'])
+  action: Action;
 
   @IsOptional()
   @IsString()
-  @ApiProperty({
-    description: 'Id of parent aggregation.',
-    example: 'BATCH-001',
-  })
-  parentID: string;
+  bizStep: BusinessStepID;
 
-  @IsArray()
+  @IsOptional()
+  @IsString()
+  disposition: DispositionID;
+
+  @IsOptional()
+  @ValidateNested()
+  readPoint: ReadPointID;
+
+  @IsOptional()
+  @ValidateNested()
+  bizLocation: BusinessLocationID;
+
   @IsOptional()
   @ValidateNested({ each: true })
-  @ApiProperty({
-    description: 'Child items of parent aggregation.',
-    type: String,
-    isArray: true,
-  })
-  childItems: Item[]string;
+  bizTransactionList: BusinessTransaction[];
 
-  class TransactionInfo {
-    @IsString()
-    @IsNotEmpty()
-    @ApiProperty({ description: 'Buyer information.', example: '1234567890' })
-    buyer: string;
-  
-    @IsString()
-    @IsNotEmpty()
-    @ApiProperty({ description: 'Currency code.', example: '0987654321' })
-    currencyCode: string;
-  
-    @IsString() zoneCode;
-    @IsNotEmpty()
-    @ApiProperty({
-      description: 'Location of transaction(s).',
-      example: '0987654321',
-    })
-    location: string;
-  
-    @IsNumber()
-    @IsNotEmpty()
-    @ApiProperty({
-      description: 'Total amount of daily transactions.',
-      example: 1000,
-    })
-    totalAmount: number;
-  }
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sourceList: Source[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  destinationList: Destination[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  sensorElementList: SensorElement[];
+}
+
+// class TransactionInfo {
+//   @IsString()
+//   @IsNotEmpty()
+//   @ApiProperty({ description: 'Buyer information.', example: '1234567890' })
+//   buyer: string;
+
+//   @IsString()
+//   @IsNotEmpty()
+//   @ApiProperty({ description: 'Currency code.', example: '0987654321' })
+//   currencyCode: string;
+
+//   @IsString() zoneCode;
+//   @IsNotEmpty()
+//   @ApiProperty({
+//     description: 'Location of transaction(s).',
+//     example: '0987654321',
+//   })
+//   location: string;
+
+//   @IsNumber()
+//   @IsNotEmpty()
+//   @ApiProperty({
+//     description: 'Total amount of daily transactions.',
+//     example: 1000,
+//   })
+//   totalAmount: number;
+// }
