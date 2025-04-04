@@ -11,174 +11,183 @@ import {
 import { Type } from 'class-transformer';
 import { Transform } from 'class-transformer';
 
-class MetadataValue {
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Metadata key', example: 'Location' })
-  key: string;
+type WinterVersion = '1.0.0' | '2.0.0-alpha';
+type EventType =
+  | 'ObjectEvent'
+  | 'AggregationEvent'
+  | 'TransformationEvent'
+  | 'AssociationEvent'
+  | 'TransactionEvent';
+type EventID = string;
+type Action = 'ADD' | 'OBSERVE' | 'DELETE';
+type UOM = 'kg' | 'g' | 'lb' | 'oz' | 'l' | 'ml' | 'm3' | 'cm3' | 'ft3' | 'in3';
+type LocationID = string;
+type ReadPointID = LocationID;
+type BusinessLocationID = LocationID;
+type DispositionID = string;
+type BusinessTransactionTypeID = string;
+type ItemClass = string;
+type SourceDestTypeID = string;
+type SourceDestID = LocationID;
+type PartyID = string;
+type ErrorReasonID = string;
+type SensorPropertyTypeID = string;
+type MircroorganismID = string;
+type ChemicalSubstanceID = string;
+type ResourceID = string;
+type Item = string;
+type DateTimeStamp = `${number}-${number}-${number}T${number}:${number}:${number}.${number}Z`; // ISO-8601 format
+type BusinessTransactionID = string;
 
-  @IsOptional()
-  @IsString()
-  @ApiProperty({ description: 'Metadata unit', example: 'kilogram' })
-  unit: string | null;
-
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Metadata value',
-    oneOf: [
-      { type: 'string', example: '7.2905° N, 80.6337° E' },
-      { type: 'array', items: { $ref: '#/components/schemas/MetadataValue' } },
-    ],
-  })
-  value: string | MetadataValue[];
+type QuantityElement = {
+  itemClass: ItemClass,
+  quantity?: number,
+  uom?: UOM
 }
 
-class TransactionInfo {
-  @IsString()
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Buyer identifier.', example: '1234567890' })
-  buyerId: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Currency code.', example: '0987654321' })
-  currencyCode: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Zone code of transactions.',
-    example: '0987654321',
-  })
-  zoneCode: string;
-
-  @IsNumber()
-  @IsNotEmpty()
-  @ApiProperty({
-    description: 'Total amount of daily transactions.',
-    example: 1000,
-  })
-  totalAmount: number;
+type ErrorDeclaration = {
+  declarationTime: DateTimeStamp,
+  reason?: ErrorReasonID,
+  correctiveEventIDs?: EventID[],
 }
+
+type PersistentDisposition = {
+  set: DispositionID[],
+  unset: DispositionID[]
+}
+
+type BusinessTransaction = {
+  type?: BusinessTransactionTypeID,
+  bizTransaction: BusinessTransactionID
+}
+
+type Source = {
+  type?: SourceDestTypeID,
+  source: SourceDestID
+}
+
+type Destination = {
+  type?: SourceDestTypeID,
+  destination: SourceDestID
+}
+
+type SensorMetadata = {
+  time?: DateTimeStamp,
+  startTime?: DateTimeStamp,
+  endTime?: DateTimeStamp,
+  deviceID?: Item,
+  deviceMetadata?: ResourceID,
+  rawData?: ResourceID,
+  dataProcessingMethod?: ResourceID,
+  bizRules?: ResourceID,
+}
+
+type SensorReport = {
+  type?: SensorPropertyTypeID,
+  exception?: string,
+  deviceID?: Item,
+  deviceMetadata?: ResourceID,
+  rawData?: ResourceID,
+  dataProcessingMethod?: ResourceID,
+  time?: DateTimeStamp,
+  mircroorganism?: MircroorganismID,
+  chemicalSubstance?: ChemicalSubstanceID,
+  value?: number,
+  component?: string,
+  stringValue?: string,
+  booleanValue?: boolean,
+  hexBinaryValue?: string,
+  uriValue?: string,
+  minValue?: number,
+  maxValue?: number,
+  meanValue?: number,
+  sDev?: number,
+  percRank?: number,
+  percValue?: number,
+  uom?: UOM,
+  coordinateReferenceSystem?: string,
+}
+
+type SensorElement = {
+  sensorMetadata?: SensorMetadata,
+  sensorReport: SensorReport[]
+}
+
+type ILMD = Record<string, string>;
 
 class ReadPoint {
-  @IsString()
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Read point ID.', example: 'MWA' })
-  id: string;
-}
-
-class InputItem {
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Item identifier.', example: '<identifier>' })
-  itemId: string;
-
-  @IsOptional()
-  @ApiProperty({ description: 'Item event ID.', example: '<tokenId>' })
-  itemEventId: string;
-
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Item quantity.', example: 500 })
-  itemQuantity: number;
-
-  @IsOptional()
   @IsNotEmpty()
   @ApiProperty({
-    description: 'Item unit of measurement.',
-    example: 'kilograms',
+    description: 'Read point location information.',
+    example: 'MWA',
   })
-  uom: string | null;
+  id: ReadPointID;
 }
 
-class OutputItem {
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Item identifier.', example: '<identifier>' })
-  itemId: string;
 
-  @IsNotEmpty()
-  @ApiProperty({ description: 'Item quantity.', example: 500 })
-  itemQuantity: number;
 
-  @IsOptional()
-  @IsString()
-  @ApiProperty({ description: 'Item unit of measurement.', example: 'null' })
-  uom: string | null;
-}
+export class Event {
 
-export class EventDto {
-  @IsNotEmpty()
+  @IsNotEmpty()string
   @ApiProperty({ description: 'Event version.', example: '1.0.0' })
   @IsIn(['1.0.0', '2.0.0-alpha'])
-  version: string;
+  version: WinterVersion;
 
   @IsNotEmpty()
   @IsString()
-  @Transform(({ value }) => value.toLowerCase())
-  @IsIn([
-    'object',
-    'aggregation',
-    'transformation',
-    'association',
-    'transaction',
-  ])
   @ApiProperty({ description: 'Event type.', example: 'object' })
-  eventType: string;
+  @IsIn([
+    'ObjectEvent',
+    'AggregationEvent',
+    'TransformationEvent',
+    'AssociationEvent',
+    'TransactionEvent',
+  ])
+  eventType: EventType;
 
   @IsNotEmpty()
-  @ApiProperty({
-    description: 'Event creation time.',
-    example: '2023-05-26T14:30:00Z',
-  })
-  eventTime: string;
+  eventTime: DateTimeStamp;
 
   @IsOptional()
-  @IsString()
-  @ApiProperty({ description: 'Event ID.', example: '' })
-  eventId: string;
+  recordTime: DateTimeStamp;
+
+  @IsNotEmpty()
+  eventTimeZoneOffset: string;
 
   @IsOptional()
-  @IsString()
-  @ApiProperty({
-    description: 'Id of parent aggregation.',
-    example: 'BATCH-001',
-  })
-  parentId: string;
+  eventID: EventID;
 
-  @IsArray()
   @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => OutputItem)
-  @ApiProperty({
-    description: 'Child items of parent aggregation.',
-    type: [OutputItem],
-  })
-  childItems: OutputItem[];
+  errorDeclaration: ErrorDeclaration;
+
+  @IsOptional()
+  certificationInfo: string;
+
+}
+
+export class ObjectEvent extends Event {
+
+  
+
+}
 
   @IsArray()
   @IsOptional()
   @ValidateNested({ each: true })
-  @Type(() => InputItem)
   @ApiProperty({
     description: 'Input items.',
-    type: [InputItem],
+    type: String,
+    isArray: true,string
+    description: 'Output items.',
+    type: String,
+    isArray: true,
   })
-  inputItems: InputItem[];
-
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => OutputItem)
-  @ApiProperty({ description: 'Output items.', type: [OutputItem] })
-  outputItems: OutputItem[];
+  outputItems: Item[];
 
   @IsOptional()
-  @Type(() => ReadPoint)
-  @ValidateNested({ each: true })
-  @ApiProperty({ description: 'Event read point.', type: ReadPoint })
   readPoint: ReadPoint;
 
   @IsOptional()
-  @ValidateNested({ each: true })
-  @ApiProperty({ description: 'Event transaction information.' })
   transactionInfo: TransactionInfo;
 
   @IsOptional()
@@ -190,4 +199,61 @@ export class EventDto {
     additionalProperties: { type: 'string' },
   })
   metadata: Record<string, string>;
-}
+
+  // Dimension: WHAT
+  // Level: Instance
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @ApiProperty({
+    description: 'Items for object events.',
+    type: String,
+    isArray: true,
+  })
+  items: Item[];
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    description: 'Id of parent aggregation.',
+    example: 'BATCH-001',
+  })
+  parentID: string;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @ApiProperty({
+    description: 'Child items of parent aggregation.',
+    type: String,
+    isArray: true,
+  })
+  childItems: Item[]string;
+
+  class TransactionInfo {
+    @IsString()
+    @IsNotEmpty()
+    @ApiProperty({ description: 'Buyer information.', example: '1234567890' })
+    buyer: string;
+  
+    @IsString()
+    @IsNotEmpty()
+    @ApiProperty({ description: 'Currency code.', example: '0987654321' })
+    currencyCode: string;
+  
+    @IsString() zoneCode;
+    @IsNotEmpty()
+    @ApiProperty({
+      description: 'Location of transaction(s).',
+      example: '0987654321',
+    })
+    location: string;
+  
+    @IsNumber()
+    @IsNotEmpty()
+    @ApiProperty({
+      description: 'Total amount of daily transactions.',
+      example: 1000,
+    })
+    totalAmount: number;
+  }
