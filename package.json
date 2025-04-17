@@ -36,6 +36,7 @@
     "@nestjs/typeorm": "^10.0.2",
     "@nestjs/websockets": "^10.0.5",
     "@supabase/supabase-js": "^2.32.0",
+    "@zengate/winter-cardano-mesh": "^1.0.0",
     "axios": "^1.4.0",
     "bull": "^4.11.3",
     "class-transformer": "^0.5.1",
@@ -52,8 +53,7 @@
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.2.0",
     "socket.io": "^4.7.1",
-    "typeorm": "^0.3.20",
-    "winter-cardano-mesh": "0.1.0"
+    "typeorm": "^0.3.20"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.1.4",
