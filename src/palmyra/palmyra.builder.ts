@@ -1,4 +1,4 @@
-import { EventFactory } from 'winter-cardano-mesh';
+import { EventFactory } from '@zengate/winter-cardano-mesh';
 import {
   KOIOS_BASE_URL,
   NETWORK,
@@ -23,8 +23,6 @@ export async function buildMint(
   job: Job<tokenizeCommodityJob> | { data: tokenizeCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
   const winterEvent = new EventFactory(
     NETWORK(),
     ZENGATE_MNEMONIC(),
@@ -36,7 +34,7 @@ export async function buildMint(
   const walletAddressPK = winterEvent.getAddressPkHash();
 
   await winterEvent.setObjectContract({
-    protocolVersion: 1,
+    protocolVersion: 2,
     dataReferenceHex: Buffer.from(job.data.metadataReference, 'utf8').toString(
       'hex',
     ),
