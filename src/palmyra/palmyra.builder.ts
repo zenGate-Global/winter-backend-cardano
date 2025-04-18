@@ -1,10 +1,8 @@
-import { EventFactory } from 'winter-cardano-mesh';
 import {
-  KOIOS_BASE_URL,
-  NETWORK,
-  TX_SUBMIT_API,
-  ZENGATE_MNEMONIC,
-} from '../constants';
+  EventFactory,
+  ObjectDatumParameters,
+} from '@zengate/winter-cardano-mesh';
+import { NETWORK, ZENGATE_MNEMONIC } from '../constants';
 import { IEvaluator, IFetcher, ISubmitter, UTxO } from '@meshsdk/core';
 import { Job } from 'bull';
 import {
@@ -13,7 +11,7 @@ import {
   tokenizeCommodityJob,
 } from '../types/job.dto';
 import { getNonMempoolUtxos, getTotalLovelace } from './palymra.utxo.service';
-import axios from 'axios';
+// import axios from 'axios';
 import { Logger } from '@nestjs/common';
 
 const logger = new Logger('Builder');
@@ -23,9 +21,7 @@ export async function buildMint(
   job: Job<tokenizeCommodityJob> | { data: tokenizeCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  const winterEvent = new EventFactory(
+  const winterFactory = new EventFactory(
     NETWORK(),
     ZENGATE_MNEMONIC(),
     provider,
@@ -33,35 +29,40 @@ export async function buildMint(
     provider,
   );
 
-  const walletAddressPK = winterEvent.getAddressPkHash();
+  const walletAddressPK = winterFactory.getAddressPkHash();
 
-  await winterEvent.setObjectContract({
+  const params: ObjectDatumParameters = {
     protocolVersion: 1,
     dataReferenceHex: Buffer.from(job.data.metadataReference, 'utf8').toString(
       'hex',
     ),
     eventCreationInfoTxHash: Buffer.from('', 'utf8').toString('hex'),
     signersPkHash: [walletAddressPK],
-  });
+  };
+  const objectDatum = EventFactory.getObjectDatumFromParams(params);
 
   const finalUtxos = submit
-    ? await getWalletUtxosWithRetry(winterEvent, 6)
-    : await winterEvent.getWalletUtxos();
+    ? await getWalletUtxosWithRetry(winterFactory, 6)
+    : await winterFactory.getWalletUtxos();
   console.log('finalUtxos: ', finalUtxos);
   console.log('before complete tx');
-  const unsignedTx = await winterEvent.mintSingleton(
+  const unsignedTx = await winterFactory.mintSingleton(
     job.data.tokenName,
     finalUtxos,
+    objectDatum,
   );
   console.log('unsignedTx: ', unsignedTx);
 
-  const signedTx = await winterEvent.signTx(unsignedTx);
+  // We sign the transaction for the user.
+  // In the future, users should be able
+  // to sign there own transactions as well.
+  const signedTx = await winterFactory.signTx(unsignedTx);
 
   logger.debug(`Mint signed tx: ${signedTx}`);
 
   if (submit) {
     //return submitTx(signedTx);
-    return await winterEvent.submitTx(signedTx);
+    return await winterFactory.submitTx(signedTx);
   }
 }
 
@@ -70,8 +71,6 @@ export async function buildRecreate(
   job: Job<recreateCommodityJob> | { data: recreateCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
   const winterEvent = new EventFactory(
     NETWORK(),
     ZENGATE_MNEMONIC(),
@@ -80,7 +79,7 @@ export async function buildRecreate(
     provider,
   );
 
-  const walletAddress = await winterEvent.getWalletAddress();
+  const walletAddress = winterEvent.getWalletAddress();
 
   const utxos = await winterEvent.getUtxosByOutRef(job.data.utxos);
 
@@ -122,7 +121,7 @@ export async function buildSpend(
     provider,
   );
 
-  const walletAddress = await winterEvent.getWalletAddress();
+  const walletAddress = winterEvent.getWalletAddress();
 
   const utxos = await winterEvent.getUtxosByOutRef(job.data.utxos);
 
@@ -135,7 +134,6 @@ export async function buildSpend(
     walletAddress,
     finalUtxos,
     utxos,
-    KOIOS_BASE_URL(),
   );
 
   const signedTx = await winterEvent.signTx(completeTx);
@@ -148,23 +146,23 @@ export async function buildSpend(
   }
 }
 
-export async function submitTx(signedTx: string): Promise<string> {
-  try {
-    const signedTxCbor = Buffer.from(signedTx, 'hex');
+// export async function submitTx(signedTx: string): Promise<string> {
+//   try {
+//     const signedTxCbor = Buffer.from(signedTx, 'hex');
 
-    const response = await axios.post(TX_SUBMIT_API(), signedTxCbor, {
-      headers: {
-        'Content-Type': 'application/cbor',
-      },
-      responseType: 'text',
-    });
+//     const response = await axios.post(TX_SUBMIT_API(), signedTxCbor, {
+//       headers: {
+//         'Content-Type': 'application/cbor',
+//       },
+//       responseType: 'text',
+//     });
 
-    return response.data.toString().replace(/"/g, '');
-  } catch (error) {
-    logger.error('Error submitting transaction:', error.response.data);
-    throw error.response.data;
-  }
-}
+//     return response.data.toString().replace(/"/g, '');
+//   } catch (error) {
+//     logger.error('Error submitting transaction:', error.response.data);
+//     throw error.response.data;
+//   }
+// }
 
 async function getWalletUtxosWithRetry(
   winterEvent: EventFactory,
