@@ -7,7 +7,7 @@ import {
   spendCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
-import { MaestroProvider } from '@meshsdk/core';
+import { BlockfrostProvider, MaestroProvider } from '@meshsdk/core';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { TransactionsService } from '../transactions/transactions.service';
 import { ConfigService } from '@nestjs/config';
@@ -25,13 +25,10 @@ export class PalmyraConsumerService {
     private readonly db: TransactionsService,
     private configService: ConfigService,
   ) {}
-  private readonly provider = new MaestroProvider({
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    network: NETWORK(),
-    apiKey: this.configService.get('MAESTRO_KEY'),
-    turboSubmit: false,
-  });
+
+  private readonly provider = new BlockfrostProvider(
+    this.configService.get('BLOCKFROST_KEY'),
+  );
 
   @Process({ name: '*', concurrency: 1 })
   async processJob(job: Job<unknown>): Promise<void> {

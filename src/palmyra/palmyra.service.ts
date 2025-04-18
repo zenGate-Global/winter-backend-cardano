@@ -6,7 +6,7 @@ import {
   spendCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
-import { MaestroProvider } from '@meshsdk/core';
+import { BlockfrostProvider, MaestroProvider } from '@meshsdk/core';
 import { NETWORK } from '../constants';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { ConfigService } from '@nestjs/config';
@@ -25,13 +25,9 @@ export class PalmyraService {
     private readonly checkDb: CheckService,
   ) {}
 
-  private readonly provider = new MaestroProvider({
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    network: NETWORK(),
-    apiKey: this.configService.get('MAESTRO_KEY'),
-    turboSubmit: false,
-  });
+  private readonly provider = new BlockfrostProvider(
+    this.configService.get('BLOCKFROST_KEY'),
+  );
 
   private readonly koios = new Koios(this.configService.get('KOIOS_BASE_URL'));
 
