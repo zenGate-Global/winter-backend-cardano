@@ -17,19 +17,11 @@ import { Logger } from '@nestjs/common';
 const logger = new Logger('Builder');
 
 export async function buildMint(
-  provider: IFetcher & ISubmitter & IEvaluator,
+  factory: EventFactory,
   job: Job<tokenizeCommodityJob> | { data: tokenizeCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
-  const winterFactory = new EventFactory(
-    NETWORK(),
-    ZENGATE_MNEMONIC(),
-    provider,
-    provider,
-    provider,
-  );
-
-  const walletAddressPK = winterFactory.getAddressPkHash();
+  const walletAddressPK = factory.getAddressPkHash();
 
   const params: ObjectDatumParameters = {
     protocolVersion: 1,
@@ -42,11 +34,11 @@ export async function buildMint(
   const objectDatum = EventFactory.getObjectDatumFromParams(params);
 
   const finalUtxos = submit
-    ? await getWalletUtxosWithRetry(winterFactory, 6)
-    : await winterFactory.getWalletUtxos();
+    ? await getWalletUtxosWithRetry(factory, 6)
+    : await factory.getWalletUtxos();
   console.log('finalUtxos: ', finalUtxos);
   console.log('before complete tx');
-  const unsignedTx = await winterFactory.mintSingleton(
+  const unsignedTx = await factory.mintSingleton(
     job.data.tokenName,
     finalUtxos,
     objectDatum,
@@ -56,13 +48,13 @@ export async function buildMint(
   // We sign the transaction for the user.
   // In the future, users should be able
   // to sign there own transactions as well.
-  const signedTx = await winterFactory.signTx(unsignedTx);
+  const signedTx = await factory.signTx(unsignedTx);
 
   logger.debug(`Mint signed tx: ${signedTx}`);
 
   if (submit) {
     //return submitTx(signedTx);
-    return await winterFactory.submitTx(signedTx);
+    return await factory.submitTx(signedTx);
   }
 }
 

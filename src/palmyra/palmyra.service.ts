@@ -6,14 +6,13 @@ import {
   spendCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
-import { BlockfrostProvider } from '@meshsdk/core';
+import { BlockfrostProvider, scriptHash } from '@meshsdk/core';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service';
 import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
 import { CheckStatus, CheckType } from '../check/entities/check.entity';
-
-/* eslint-disable  @typescript-eslint/no-non-null-assertion */
+import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 
 @Injectable()
 export class PalmyraService {
@@ -28,16 +27,26 @@ export class PalmyraService {
     this.configService.get('BLOCKFROST_KEY'),
   );
 
+  private readonly factory = new EventFactory(
+    NETWORK(),
+    ZENGATE_MNEMONIC(),
+    this.provider,
+    this.provider,
+  );
+
   async getDataByTokenIds(tokenIds: string[]): Promise<ObjectDatumFields[]> {
     let datums: string[];
     try {
-      datums = (await this.koios.assetUtxos(tokenIds)).map(
-        (utxo) => utxo.inline_datum.bytes,
+      // datums = (await this.koios.assetUtxos(tokenIds)).map(
+      //   (utxo) => utxo.inline_datum.bytes,
+      // );
+      datums = await Promise.all(
+        tokenIds.map(async (id) => await this.factory.getScriptInfo(id)),
       );
     } catch (error) {
-      this.logger.error(`koios api error: ${error}`);
+      this.logger.error(`Blockfrost getScriptInfo error: ${error}`);
       throw new BadRequestException({
-        message: 'Koios API Error',
+        message: 'Blockfrost API Error',
         cause: error.message,
       });
     }
