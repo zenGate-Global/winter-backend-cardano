@@ -1,5 +1,4 @@
 import { Process, Processor } from '@nestjs/bull';
-import { NETWORK } from '../constants';
 import { Job } from 'bull';
 
 import {
@@ -7,7 +6,7 @@ import {
   spendCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
-import { BlockfrostProvider, MaestroProvider } from '@meshsdk/core';
+import { BlockfrostProvider } from '@meshsdk/core';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { TransactionsService } from '../transactions/transactions.service';
 import { ConfigService } from '@nestjs/config';

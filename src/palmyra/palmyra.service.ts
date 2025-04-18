@@ -6,12 +6,11 @@ import {
   spendCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
-import { BlockfrostProvider, MaestroProvider } from '@meshsdk/core';
-import { NETWORK } from '../constants';
+import { BlockfrostProvider } from '@meshsdk/core';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service';
-import { EventFactory, Koios, ObjectDatumFields } from 'winter-cardano-mesh';
+import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
 import { CheckStatus, CheckType } from '../check/entities/check.entity';
 
 /* eslint-disable  @typescript-eslint/no-non-null-assertion */
@@ -28,8 +27,6 @@ export class PalmyraService {
   private readonly provider = new BlockfrostProvider(
     this.configService.get('BLOCKFROST_KEY'),
   );
-
-  private readonly koios = new Koios(this.configService.get('KOIOS_BASE_URL'));
 
   async getDataByTokenIds(tokenIds: string[]): Promise<ObjectDatumFields[]> {
     let datums: string[];
