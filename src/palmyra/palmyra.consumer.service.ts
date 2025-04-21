@@ -13,6 +13,8 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { CheckService } from '../check/check.service';
 import { CheckStatus } from 'src/check/entities/check.entity';
+import { EventFactory } from '@zengate/winter-cardano-mesh';
+import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 
 /* eslint-disable  @typescript-eslint/no-non-null-assertion */
 
@@ -27,6 +29,13 @@ export class PalmyraConsumerService {
 
   private readonly provider = new BlockfrostProvider(
     this.configService.get('BLOCKFROST_KEY'),
+  );
+
+  private readonly factory = new EventFactory(
+    NETWORK(),
+    ZENGATE_MNEMONIC(),
+    this.provider,
+    this.provider,
   );
 
   @Process({ name: '*', concurrency: 1 })
@@ -62,7 +71,7 @@ export class PalmyraConsumerService {
 
   async tokenizeCommodity(job: Job<tokenizeCommodityJob>): Promise<void> {
     try {
-      const txid = (await buildMint(this.provider, job, true)) as string;
+      const txid = (await buildMint(this.factory, job, true)) as string;
       if (typeof txid !== 'string') {
         throw new Error(txid);
       }
@@ -83,7 +92,7 @@ export class PalmyraConsumerService {
 
   async recreateCommodity(job: Job<recreateCommodityJob>): Promise<void> {
     try {
-      const hash = (await buildRecreate(this.provider, job, true)) as string;
+      const hash = (await buildRecreate(this.factory, job, true)) as string;
       if (typeof hash !== 'string') {
         throw new Error(hash);
       }
@@ -111,7 +120,7 @@ export class PalmyraConsumerService {
 
   async spendCommodity(job: Job<spendCommodityJob>): Promise<void> {
     try {
-      const hash = (await buildSpend(this.provider, job, true)) as string;
+      const hash = (await buildSpend(this.factory, job, true)) as string;
       if (typeof hash !== 'string') {
         throw new Error(hash);
       }
