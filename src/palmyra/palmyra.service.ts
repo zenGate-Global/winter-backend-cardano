@@ -64,7 +64,7 @@ export class PalmyraService {
   }
   async dispatchSpendCommodity(jobArguments: spendCommodityJob) {
     try {
-      await buildSpend(this.provider, { data: jobArguments }, false);
+      await buildSpend(this.factory, { data: jobArguments }, false);
       await this.queue.add('spend-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,
@@ -82,7 +82,7 @@ export class PalmyraService {
 
   async dispatchTokenizeCommodity(jobArguments: tokenizeCommodityJob) {
     try {
-      await buildMint(this.provider, { data: jobArguments }, false);
+      await buildMint(this.factory, { data: jobArguments }, false);
       await this.queue.add('tokenize-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,
@@ -104,7 +104,7 @@ export class PalmyraService {
 
   async dispatchRecreateCommodity(jobArguments: recreateCommodityJob) {
     try {
-      await buildRecreate(this.provider, { data: jobArguments }, false);
+      await buildRecreate(this.factory, { data: jobArguments }, false);
       await this.queue.add('recreate-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,
