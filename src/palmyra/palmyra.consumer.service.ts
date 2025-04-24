@@ -9,8 +9,8 @@ import {
 import { BlockfrostProvider } from '@meshsdk/core';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { TransactionsService } from '../transactions/transactions.service';
-import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service';
 import { CheckStatus } from 'src/check/entities/check.entity';
 import { EventFactory } from '@zengate/winter-cardano-mesh';
@@ -21,22 +21,23 @@ import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 @Processor('tx-queue')
 export class PalmyraConsumerService {
   private readonly logger = new Logger(PalmyraConsumerService.name);
+  private readonly provider: BlockfrostProvider;
+  private readonly factory: EventFactory;
   constructor(
     private readonly checkDb: CheckService,
     private readonly db: TransactionsService,
     private configService: ConfigService,
-  ) {}
-
-  private readonly provider = new BlockfrostProvider(
-    this.configService.get('BLOCKFROST_KEY'),
-  );
-
-  private readonly factory = new EventFactory(
-    NETWORK(),
-    ZENGATE_MNEMONIC(),
-    this.provider,
-    this.provider,
-  );
+  ) {
+    this.provider = new BlockfrostProvider(
+      this.configService.get('BLOCKFROST_KEY') as string,
+    );
+    this.factory = new EventFactory(
+      NETWORK(),
+      ZENGATE_MNEMONIC(),
+      this.provider,
+      this.provider,
+    );
+  }
 
   @Process({ name: '*', concurrency: 1 })
   async processJob(job: Job<unknown>): Promise<void> {

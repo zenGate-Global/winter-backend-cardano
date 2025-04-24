@@ -7,8 +7,9 @@ import {
   Transaction,
   TransactionOutputReference,
 } from '@cardano-ogmios/schema';
-import { UTxO } from '@meshsdk/core';
 import { Logger } from '@nestjs/common';
+
+import { Asset, UTxO } from '@meshsdk/core';
 import { OGMIOS_HOST, OGMIOS_PORT } from '../constants';
 
 const logger = new Logger('PalmyraUTXO');
@@ -23,7 +24,7 @@ export const createContext = () =>
 async function flushMempool(
   client: MempoolMonitoring.MempoolMonitoringClient,
 ): Promise<Transaction[]> {
-  const transactions = [];
+  const transactions: Transaction[] = [];
 
   for (;;) {
     const transaction = await client.nextTransaction({ fields: 'all' });
@@ -87,7 +88,7 @@ export async function getUnconfirmedInputs(): Promise<
 }
 
 function mapValueToAmount(value) {
-  const amount = [];
+  const amount: Asset[] = [];
 
   // Map ADA (lovelace)
   if (value.ada && value.ada.lovelace) {
@@ -150,9 +151,13 @@ export async function getNonMempoolUtxos(utxos: UTxO[]) {
 
 export function getTotalLovelace(utxos: UTxO[]): bigint {
   return utxos.reduce(
-    (acc, curr) =>
-      acc +
-      BigInt(curr.output.amount.find((a) => a.unit === 'lovelace').quantity),
+    (acc, curr) => {
+      const ada = curr.output.amount.find((a) => a.unit === 'lovelace');
+      if (!ada) {
+        throw new Error('Lovelace not found in UTxO');
+      }
+      return acc + BigInt(ada.quantity)
+    },
     BigInt(0),
   );
 }

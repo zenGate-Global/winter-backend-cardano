@@ -24,6 +24,11 @@ export class CheckController {
     type: Check,
   })
   findOne(@Param('id') id: string): Promise<Check> {
-    return this.checkService.findOne(id);
+    return this.checkService.findOne(id).then((result) => {
+      if (!result) {
+        throw new Error(`Check with id ${id} not found`);
+      }
+      return result;
+    });
   }
 }

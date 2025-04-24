@@ -2,8 +2,7 @@ import {
   EventFactory,
   ObjectDatumParameters,
 } from '@zengate/winter-cardano-mesh';
-import { NETWORK, ZENGATE_MNEMONIC } from '../constants';
-import { IEvaluator, IFetcher, ISubmitter, UTxO } from '@meshsdk/core';
+import { UTxO } from '@meshsdk/core';
 import { Job } from 'bull';
 import {
   recreateCommodityJob,
@@ -142,8 +141,8 @@ async function getWalletUtxosWithRetry(
   winterEvent: EventFactory,
   maxAttempts: number,
 ): Promise<UTxO[]> {
-  let walletUtxos: UTxO[];
-  let finalUtxos: UTxO[];
+  let walletUtxos: UTxO[] = [];
+  let finalUtxos: UTxO[] = [];
   let attemptCount = 0;
 
   while (attemptCount < maxAttempts) {

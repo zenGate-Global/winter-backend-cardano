@@ -5,34 +5,36 @@ import {
   recreateCommodityJob,
   spendCommodityJob,
   tokenizeCommodityJob,
-} from '../types/job.dto';
-import { BlockfrostProvider, scriptHash } from '@meshsdk/core';
-import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
+} from '../types/job.dto.js';
+import { BlockfrostProvider } from '@meshsdk/core';
+import { buildMint, buildRecreate, buildSpend } from './palmyra.builder.js';
 import { ConfigService } from '@nestjs/config';
-import { CheckService } from '../check/check.service';
+import { CheckService } from '../check/check.service.js';
 import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
-import { CheckStatus, CheckType } from '../check/entities/check.entity';
+import { CheckStatus, CheckType } from '../check/entities/check.entity.js';
 import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 
 @Injectable()
 export class PalmyraService {
   private readonly logger = new Logger(PalmyraService.name);
+  private readonly provider: BlockfrostProvider;
+  private readonly factory: EventFactory;
   constructor(
     @InjectQueue('tx-queue') private queue: Queue,
     private configService: ConfigService,
     private readonly checkDb: CheckService,
-  ) {}
+  ) {
+    this.provider = new BlockfrostProvider(
+      this.configService.get('BLOCKFROST_KEY') as string,
+    );
 
-  private readonly provider = new BlockfrostProvider(
-    this.configService.get('BLOCKFROST_KEY'),
-  );
-
-  private readonly factory = new EventFactory(
-    NETWORK(),
-    ZENGATE_MNEMONIC(),
-    this.provider,
-    this.provider,
-  );
+    this.factory = new EventFactory(
+      NETWORK(),
+      ZENGATE_MNEMONIC(),
+      this.provider,
+      this.provider,
+    );
+  }
 
   async getDataByTokenIds(tokenIds: string[]): Promise<ObjectDatumFields[]> {
     let datums: string[];

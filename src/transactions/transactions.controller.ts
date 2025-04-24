@@ -42,13 +42,19 @@ export class TransactionsController {
         HttpStatus.BAD_REQUEST,
       );
     }
-    let res: Transaction | Transaction[] =
+    let res: Transaction | Transaction[] | null =
       await this.transactionsService.findOne(txid);
     if (!res) {
       res = await this.transactionsService.findRecreatedByHash(txid);
     }
     if (Array.isArray(res)) {
       return res;
+    }
+    if (res === null) {
+      throw new HttpException(
+        'Transaction not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
     return [res];
   }
