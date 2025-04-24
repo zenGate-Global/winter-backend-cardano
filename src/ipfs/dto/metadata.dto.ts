@@ -7,9 +7,11 @@ import {
   IsIn,
   IsNumber,
   IsBoolean,
+  IsISO8601,
+  IsDataURI,
 } from 'class-validator';
+import { IsEventTimeZoneOffset } from './isEventTimeZoneOffset';
 
-type WinterVersion = '1.0.0' | '2.0.0-alpha';
 type EventType =
   | 'ObjectEvent'
   | 'AggregationEvent'
@@ -31,18 +33,17 @@ type DispositionID = string;
 type BusinessTransactionTypeID = string;
 type ItemClass = string;
 type SourceDestTypeID = string;
-class SourceDestID extends LocationID {}
 type PartyID = string;
+type SourceDestID = PartyID
 type ErrorReasonID = string;
 type SensorPropertyTypeID = string;
 type MircroorganismID = string;
 type ChemicalSubstanceID = string;
 type ResourceID = string;
 type Item = string;
-type DateTimeStamp =
-  | string
-  | `${number}-${number}-${number}T${number}:${number}:${number}.${number}Z`; // ISO-8601 format
 type BusinessTransactionID = string;
+type DateTimeStamp = string;
+type CertificationDetails = string;
 
 class QuantityElement {
   @IsNotEmpty()
@@ -61,8 +62,11 @@ class QuantityElement {
 
 class ErrorDeclaration {
   @IsNotEmpty()
-  @IsString()
-  declarationTime: DateTimeStamp;
+  @IsISO8601({
+    strict: true,
+    strictSeparator: true,
+  })
+  declarationTime: string;
 
   @IsOptional()
   @IsString()
@@ -121,16 +125,27 @@ class Destination {
 
 class SensorMetadata {
   @IsOptional()
-  @IsString()
-  time: DateTimeStamp;
+  @IsISO8601({
+    strict: true,
+    strictSeparator: true,
+  })
+  time: string;
+
   @IsNotEmpty()
   @IsOptional()
-  @IsString()
-  startTime: DateTimeStamp;
+  @IsISO8601({
+    strict: true,
+    strictSeparator: true,
+  })
+  startTime: string;
 
   @IsOptional()
   @IsString()
-  endTime: DateTimeStamp;
+  @IsISO8601({
+    strict: true,
+    strictSeparator: true,
+  })
+  endTime: string;
 
   @IsOptional()
   @IsString()
@@ -179,8 +194,11 @@ class SensorReport {
   dataProcessingMethod: ResourceID;
 
   @IsOptional()
-  @IsString()
-  time: DateTimeStamp;
+  @IsISO8601({
+    strict: true,
+    strictSeparator: true,
+  })
+  time: string;
 
   @IsString()
   mircroorganism: MircroorganismID;
@@ -260,10 +278,6 @@ type ILMD = Record<string, string>;
 type TransformationID = string;
 
 export class Event {
-  @IsNotEmpty()
-  @IsString()
-  @IsIn(['1.0.0', '2.0.0-alpha'])
-  winterProtocolVersion: WinterVersion;
 
   @IsNotEmpty()
   @IsString()
@@ -277,16 +291,21 @@ export class Event {
   type: EventType;
 
   @IsNotEmpty()
-  @IsString()
-  eventTime: DateTimeStamp;
+  @IsISO8601({
+    strict: true,
+    strictSeparator: true,
+  })
+  eventTime: DataTimeStamp;
 
   @IsOptional()
-  @IsString()
+  @IsISO8601({
+    strict: true,
+    strictSeparator: true,
+  })
   recordTime: DateTimeStamp;
 
-  //@IsNotEmpty()
-  @IsOptional()
-  @IsString()
+  @IsNotEmpty()
+  @IsEventTimeZoneOffset()
   eventTimeZoneOffset: string;
 
   @IsOptional()
@@ -299,7 +318,7 @@ export class Event {
 
   @IsOptional()
   @IsString()
-  certificationInfo: string;
+  certificationInfo: CertificationDetails;
 }
 
 export class ObjectEvent extends Event {
@@ -577,31 +596,3 @@ export class AssociationEvent extends Event {
   @ValidateNested({ each: true })
   sensorElementList: SensorElement[];
 }
-
-// class TransactionInfo {
-//   @IsString()
-//   @IsNotEmpty()
-//   @ApiProperty({ description: 'Buyer information.', example: '1234567890' })
-//   buyer: string;
-
-//   @IsString()
-//   @IsNotEmpty()
-//   @ApiProperty({ description: 'Currency code.', example: '0987654321' })
-//   currencyCode: string;
-
-//   @IsString() zoneCode;
-//   @IsNotEmpty()
-//   @ApiProperty({
-//     description: 'Location of transaction(s).',
-//     example: '0987654321',
-//   })
-//   location: string;
-
-//   @IsNumber()
-//   @IsNotEmpty()
-//   @ApiProperty({
-//     description: 'Total amount of daily transactions.',
-//     example: 1000,
-//   })
-//   totalAmount: number;
-// }
