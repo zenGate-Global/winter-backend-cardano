@@ -14,8 +14,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ErrorResponse } from '../palmyra/dto/error.dto';
-import { CID } from 'multiformats/cid';
-import { isString } from 'class-validator';
 import {
   AggregationEvent,
   AssociationEvent,
@@ -50,13 +48,11 @@ export class IpfsController {
       | AssociationEvent,
   ): Promise<StoreIpfsResponseDto> {
     console.log(`raw data: ${data}`);
-    const res = await this.ipfsService.storeJson(data);
     try {
-      if (isCID(res)) {
-        return {
-          hash: res as string,
-        };
-      }
+      const res = await this.ipfsService.storeJson(data);
+      return {
+        hash: res as string,
+      };
     } catch (error) {
       this.logger.error(`CID validation failed: ${error}`);
       throw new HttpException(
@@ -67,21 +63,5 @@ export class IpfsController {
         },
       );
     }
-  }
-}
-
-function isCID(hash: CID | Uint8Array | string): hash is CID {
-  try {
-    if (isString(hash)) {
-      return Boolean(CID.parse(hash));
-    }
-
-    if (hash instanceof Uint8Array) {
-      return Boolean(CID.decode(hash));
-    }
-
-    return Boolean(CID.asCID(hash));
-  } catch {
-    return false;
   }
 }

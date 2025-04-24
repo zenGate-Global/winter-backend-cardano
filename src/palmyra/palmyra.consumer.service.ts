@@ -1,5 +1,4 @@
 import { Process, Processor } from '@nestjs/bull';
-import { NETWORK } from '../constants';
 import { Job } from 'bull';
 
 import {
@@ -7,31 +6,38 @@ import {
   spendCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
-import { MaestroProvider } from '@meshsdk/core';
+import { BlockfrostProvider } from '@meshsdk/core';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
 import { TransactionsService } from '../transactions/transactions.service';
-import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service';
 import { CheckStatus } from 'src/check/entities/check.entity';
+import { EventFactory } from '@zengate/winter-cardano-mesh';
+import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 
 /* eslint-disable  @typescript-eslint/no-non-null-assertion */
 
 @Processor('tx-queue')
 export class PalmyraConsumerService {
   private readonly logger = new Logger(PalmyraConsumerService.name);
+  private readonly provider: BlockfrostProvider;
+  private readonly factory: EventFactory;
   constructor(
     private readonly checkDb: CheckService,
     private readonly db: TransactionsService,
     private configService: ConfigService,
-  ) {}
-  private readonly provider = new MaestroProvider({
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    network: NETWORK(),
-    apiKey: this.configService.get('MAESTRO_KEY'),
-    turboSubmit: false,
-  });
+  ) {
+    this.provider = new BlockfrostProvider(
+      this.configService.get('BLOCKFROST_KEY') as string,
+    );
+    this.factory = new EventFactory(
+      NETWORK(),
+      ZENGATE_MNEMONIC(),
+      this.provider,
+      this.provider,
+    );
+  }
 
   @Process({ name: '*', concurrency: 1 })
   async processJob(job: Job<unknown>): Promise<void> {
@@ -66,7 +72,7 @@ export class PalmyraConsumerService {
 
   async tokenizeCommodity(job: Job<tokenizeCommodityJob>): Promise<void> {
     try {
-      const txid = (await buildMint(this.provider, job, true)) as string;
+      const txid = (await buildMint(this.factory, job, true)) as string;
       if (typeof txid !== 'string') {
         throw new Error(txid);
       }
@@ -87,7 +93,7 @@ export class PalmyraConsumerService {
 
   async recreateCommodity(job: Job<recreateCommodityJob>): Promise<void> {
     try {
-      const hash = (await buildRecreate(this.provider, job, true)) as string;
+      const hash = (await buildRecreate(this.factory, job, true)) as string;
       if (typeof hash !== 'string') {
         throw new Error(hash);
       }
@@ -115,7 +121,7 @@ export class PalmyraConsumerService {
 
   async spendCommodity(job: Job<spendCommodityJob>): Promise<void> {
     try {
-      const hash = (await buildSpend(this.provider, job, true)) as string;
+      const hash = (await buildSpend(this.factory, job, true)) as string;
       if (typeof hash !== 'string') {
         throw new Error(hash);
       }

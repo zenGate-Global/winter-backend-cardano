@@ -2,8 +2,7 @@ import {
   EventFactory,
   ObjectDatumParameters,
 } from '@zengate/winter-cardano-mesh';
-import { NETWORK, ZENGATE_MNEMONIC } from '../constants';
-import { IEvaluator, IFetcher, ISubmitter, UTxO } from '@meshsdk/core';
+import { UTxO } from '@meshsdk/core';
 import { Job } from 'bull';
 import {
   recreateCommodityJob,
@@ -17,19 +16,11 @@ import { Logger } from '@nestjs/common';
 const logger = new Logger('Builder');
 
 export async function buildMint(
-  provider: IFetcher & ISubmitter & IEvaluator,
+  factory: EventFactory,
   job: Job<tokenizeCommodityJob> | { data: tokenizeCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
-  const winterFactory = new EventFactory(
-    NETWORK(),
-    ZENGATE_MNEMONIC(),
-    provider,
-    provider,
-    provider,
-  );
-
-  const walletAddressPK = winterFactory.getAddressPkHash();
+  const walletAddressPK = factory.getAddressPkHash();
 
   const params: ObjectDatumParameters = {
     protocolVersion: 1,
@@ -42,11 +33,11 @@ export async function buildMint(
   const objectDatum = EventFactory.getObjectDatumFromParams(params);
 
   const finalUtxos = submit
-    ? await getWalletUtxosWithRetry(winterFactory, 6)
-    : await winterFactory.getWalletUtxos();
+    ? await getWalletUtxosWithRetry(factory, 6)
+    : await factory.getWalletUtxos();
   console.log('finalUtxos: ', finalUtxos);
   console.log('before complete tx');
-  const unsignedTx = await winterFactory.mintSingleton(
+  const unsignedTx = await factory.mintSingleton(
     job.data.tokenName,
     finalUtxos,
     objectDatum,
@@ -56,38 +47,30 @@ export async function buildMint(
   // We sign the transaction for the user.
   // In the future, users should be able
   // to sign there own transactions as well.
-  const signedTx = await winterFactory.signTx(unsignedTx);
+  const signedTx = await factory.signTx(unsignedTx);
 
   logger.debug(`Mint signed tx: ${signedTx}`);
 
   if (submit) {
     //return submitTx(signedTx);
-    return await winterFactory.submitTx(signedTx);
+    return await factory.submitTx(signedTx);
   }
 }
 
 export async function buildRecreate(
-  provider: IFetcher & ISubmitter & IEvaluator,
+  factory: EventFactory,
   job: Job<recreateCommodityJob> | { data: recreateCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
-  const winterEvent = new EventFactory(
-    NETWORK(),
-    ZENGATE_MNEMONIC(),
-    provider,
-    provider,
-    provider,
-  );
+  const walletAddress = factory.getWalletAddress();
 
-  const walletAddress = winterEvent.getWalletAddress();
-
-  const utxos = await winterEvent.getUtxosByOutRef(job.data.utxos);
+  const utxos = await factory.getUtxosByOutRef(job.data.utxos);
 
   const finalUtxos = submit
-    ? await getWalletUtxosWithRetry(winterEvent, 6)
-    : await winterEvent.getWalletUtxos();
+    ? await getWalletUtxosWithRetry(factory, 6)
+    : await factory.getWalletUtxos();
 
-  const completeTx = await winterEvent.recreate(
+  const completeTx = await factory.recreate(
     walletAddress,
     finalUtxos,
     utxos,
@@ -96,53 +79,43 @@ export async function buildRecreate(
     ),
   );
 
-  const signedTx = await winterEvent.signTx(completeTx);
+  const signedTx = await factory.signTx(completeTx);
 
   logger.debug(`Recreation signed tx: ${signedTx}`);
 
   if (submit) {
     // return submitTx(signedTx);
-    return await winterEvent.submitTx(signedTx);
+    return await factory.submitTx(signedTx);
   }
 }
 
 export async function buildSpend(
-  provider: IFetcher & ISubmitter & IEvaluator,
+  factory: EventFactory,
   job: Job<spendCommodityJob> | { data: spendCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  const winterEvent = new EventFactory(
-    NETWORK(),
-    ZENGATE_MNEMONIC(),
-    provider,
-    provider,
-    provider,
-  );
+  const walletAddress = factory.getWalletAddress();
 
-  const walletAddress = winterEvent.getWalletAddress();
-
-  const utxos = await winterEvent.getUtxosByOutRef(job.data.utxos);
+  const utxos = await factory.getUtxosByOutRef(job.data.utxos);
 
   const finalUtxos = submit
-    ? await getWalletUtxosWithRetry(winterEvent, 6)
-    : await winterEvent.getWalletUtxos();
+    ? await getWalletUtxosWithRetry(factory, 6)
+    : await factory.getWalletUtxos();
 
-  const completeTx = await winterEvent.spend(
+  const completeTx = await factory.spend(
     walletAddress,
     walletAddress,
     finalUtxos,
     utxos,
   );
 
-  const signedTx = await winterEvent.signTx(completeTx);
+  const signedTx = await factory.signTx(completeTx);
 
   logger.debug(`Spend signed tx: ${signedTx}`);
 
   if (submit) {
     // return submitTx(signedTx);
-    return await winterEvent.submitTx(signedTx);
+    return await factory.submitTx(signedTx);
   }
 }
 
@@ -168,8 +141,8 @@ async function getWalletUtxosWithRetry(
   winterEvent: EventFactory,
   maxAttempts: number,
 ): Promise<UTxO[]> {
-  let walletUtxos: UTxO[];
-  let finalUtxos: UTxO[];
+  let walletUtxos: UTxO[] = [];
+  let finalUtxos: UTxO[] = [];
   let attemptCount = 0;
 
   while (attemptCount < maxAttempts) {
