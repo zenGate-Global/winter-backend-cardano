@@ -1,4 +1,3 @@
-import { ApiProperty } from '@nestjs/swagger';
 import {
   IsNotEmpty,
   ValidateNested,
@@ -8,7 +7,6 @@ import {
   IsNumber,
   IsBoolean,
   IsISO8601,
-  IsDataURI,
 } from 'class-validator';
 import { IsEventTimeZoneOffset } from './isEventTimeZoneOffset';
 
@@ -66,7 +64,7 @@ class ErrorDeclaration {
     strict: true,
     strictSeparator: true,
   })
-  declarationTime: string;
+  declarationTime: DateTimeStamp;
 
   @IsOptional()
   @IsString()
@@ -129,7 +127,7 @@ class SensorMetadata {
     strict: true,
     strictSeparator: true,
   })
-  time: string;
+  time: DateTimeStamp;
 
   @IsNotEmpty()
   @IsOptional()
@@ -137,7 +135,7 @@ class SensorMetadata {
     strict: true,
     strictSeparator: true,
   })
-  startTime: string;
+  startTime: DateTimeStamp;
 
   @IsOptional()
   @IsString()
@@ -145,7 +143,7 @@ class SensorMetadata {
     strict: true,
     strictSeparator: true,
   })
-  endTime: string;
+  endTime: DateTimeStamp;
 
   @IsOptional()
   @IsString()
@@ -295,7 +293,7 @@ export class Event {
     strict: true,
     strictSeparator: true,
   })
-  eventTime: DataTimeStamp;
+  eventTime: DateTimeStamp;
 
   @IsOptional()
   @IsISO8601({
