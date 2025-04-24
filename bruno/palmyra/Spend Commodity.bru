@@ -1,0 +1,22 @@
+meta {
+  name: Spend Commodity
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{winter}}/palmyra/spendCommodity
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "utxos": [
+      {
+        "txHash": "cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9",
+        "outputIndex": 0
+      }
+    ]
+  }
+}

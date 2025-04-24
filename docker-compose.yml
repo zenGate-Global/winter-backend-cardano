@@ -4,7 +4,7 @@ services:
     volumes:
       - .:/usr/src/app
     ports:
-      - "4193:4000"
+      - "4000:4000"
     env_file:
       - .env
     depends_on:
@@ -13,23 +13,26 @@ services:
     restart: always
 
   redis:
-    image: redis:6.2-alpine
+    image: redis
     restart: always
     ports:
-      - '6379:6379'
+      - "6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --save 60 1 --loglevel warning
 
   db:
-    image: rapidfort/postgresql:16.0.0
+    image: postgres
     ports:
-      - '5432:5432'
-    env_file:
-      - .env
+      - "5432:5432"
+    restart: unless-stopped
+    env_file: .env
     volumes:
-      - postgres-data:/bitnami/postgresql
-    restart: always
+      - postgres-data:/var/lib/postgresql/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100M"
 
 volumes:
   redis-data:

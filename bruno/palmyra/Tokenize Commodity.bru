@@ -1,0 +1,18 @@
+meta {
+  name: Tokenize Commodity
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{winter}}/palmyra/tokenizeCommodity
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "tokenName": "Black Tea Test",
+    "metadataReference": "ipfs://bafkreif4b56ys6xekanxy5w7ldmc5jf2ym52igxemz4gmk37fqp4rpxgda"
+  }
+}

@@ -21,7 +21,7 @@ export class CheckService {
     return await this.checkRepository.find();
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<Check> {
     const res = await this.checkRepository.findOneBy({ id });
     if (!res) {
       throw new BadRequestException('Not Found', {
@@ -29,14 +29,14 @@ export class CheckService {
         description: 'Not Found',
       });
     }
-    return await this.checkRepository.findOneBy({ id });
+    return res;
   }
 
   async update(id: string, updateCheckDto: UpdateCheckDto) {
     const check = await this.findOne(id);
     check.status = updateCheckDto.status;
-    check.txid = updateCheckDto.txid;
-    check.error = updateCheckDto.error;
+    check.txid = updateCheckDto.txid ?? 'No tx id.';
+    check.error = updateCheckDto.error ?? 'No error.';
     await this.entityManager.save(check);
   }
 }

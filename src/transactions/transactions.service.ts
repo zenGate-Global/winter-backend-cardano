@@ -63,6 +63,9 @@ export class TransactionsService {
     if (!tx) {
       tx = await this.findRecreated(txid, outputIndex);
     }
+    if (!tx) {
+      throw new Error(`Transaction with txid ${txid} and outputIndex ${outputIndex} not found.`);
+    }
     tx.recreated.push(updateTransactionDto.recreated);
     await this.entityManager.save(tx);
   }
@@ -75,6 +78,9 @@ export class TransactionsService {
     let tx = await this.findOne(txid);
     if (!tx) {
       tx = await this.findRecreated(txid, outputIndex);
+    }
+    if (!tx) {
+      throw new Error(`Transaction with txid ${txid} and outputIndex ${outputIndex} not found.`);
     }
     tx.spent = updateTransactionDto.spent;
     await this.entityManager.save(tx);

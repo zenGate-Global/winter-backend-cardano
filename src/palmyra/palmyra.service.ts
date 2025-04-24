@@ -5,52 +5,57 @@ import {
   recreateCommodityJob,
   spendCommodityJob,
   tokenizeCommodityJob,
-} from '../types/job.dto';
-import { MaestroProvider } from '@meshsdk/core';
-import { NETWORK } from '../constants';
-import { buildMint, buildRecreate, buildSpend } from './palmyra.builder';
+} from '../types/job.dto.js';
+import { BlockfrostProvider } from '@meshsdk/core';
+import { buildMint, buildRecreate, buildSpend } from './palmyra.builder.js';
 import { ConfigService } from '@nestjs/config';
-import { CheckService } from '../check/check.service';
-import { getEventDatum, Koios } from 'winter-cardano-mesh';
-import { ObjectDatum } from 'winter-cardano-mesh/src/models';
-import { CheckStatus, CheckType } from '../check/entities/check.entity';
-
-/* eslint-disable  @typescript-eslint/no-non-null-assertion */
+import { CheckService } from '../check/check.service.js';
+import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
+import { CheckStatus, CheckType } from '../check/entities/check.entity.js';
+import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 
 @Injectable()
 export class PalmyraService {
   private readonly logger = new Logger(PalmyraService.name);
+  private readonly provider: BlockfrostProvider;
+  private readonly factory: EventFactory;
   constructor(
     @InjectQueue('tx-queue') private queue: Queue,
     private configService: ConfigService,
     private readonly checkDb: CheckService,
-  ) {}
+  ) {
+    this.provider = new BlockfrostProvider(
+      this.configService.get('BLOCKFROST_KEY') as string,
+    );
 
-  private readonly provider = new MaestroProvider({
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    network: NETWORK(),
-    apiKey: this.configService.get('MAESTRO_KEY'),
-    turboSubmit: false,
-  });
+    this.factory = new EventFactory(
+      NETWORK(),
+      ZENGATE_MNEMONIC(),
+      this.provider,
+      this.provider,
+    );
+  }
 
-  private readonly koios = new Koios(this.configService.get('KOIOS_BASE_URL'));
-
-  async getDataByTokenIds(tokenIds: string[]): Promise<ObjectDatum[]> {
-    let datums;
+  async getDataByTokenIds(tokenIds: string[]): Promise<ObjectDatumFields[]> {
+    let datums: string[];
     try {
-      datums = (await this.koios.assetUtxos(tokenIds)).map(
-        (utxo) => utxo.inline_datum.bytes,
+      // datums = (await this.koios.assetUtxos(tokenIds)).map(
+      //   (utxo) => utxo.inline_datum.bytes,
+      // );
+      datums = await Promise.all(
+        tokenIds.map(async (id) => await this.factory.getScriptInfo(id)),
       );
     } catch (error) {
-      this.logger.error(`koios api error: ${error}`);
+      this.logger.error(`Blockfrost getScriptInfo error: ${error}`);
       throw new BadRequestException({
-        message: 'Koios API Error',
+        message: 'Blockfrost API Error',
         cause: error.message,
       });
     }
     try {
-      return datums.map((d: string) => getEventDatum(d));
+      return datums.map((d: string) =>
+        EventFactory.getObjectDatumFieldsFromPlutusCbor(d),
+      );
     } catch (error) {
       this.logger.error(`datum decode error: ${error}`);
       throw new BadRequestException({
@@ -61,7 +66,7 @@ export class PalmyraService {
   }
   async dispatchSpendCommodity(jobArguments: spendCommodityJob) {
     try {
-      await buildSpend(this.provider, { data: jobArguments }, false);
+      await buildSpend(this.factory, { data: jobArguments }, false);
       await this.queue.add('spend-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,
@@ -79,7 +84,7 @@ export class PalmyraService {
 
   async dispatchTokenizeCommodity(jobArguments: tokenizeCommodityJob) {
     try {
-      await buildMint(this.provider, { data: jobArguments }, false);
+      await buildMint(this.factory, { data: jobArguments }, false);
       await this.queue.add('tokenize-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,
@@ -101,7 +106,7 @@ export class PalmyraService {
 
   async dispatchRecreateCommodity(jobArguments: recreateCommodityJob) {
     try {
-      await buildRecreate(this.provider, { data: jobArguments }, false);
+      await buildRecreate(this.factory, { data: jobArguments }, false);
       await this.queue.add('recreate-commodity', jobArguments);
       await this.checkDb.create({
         id: jobArguments.id,

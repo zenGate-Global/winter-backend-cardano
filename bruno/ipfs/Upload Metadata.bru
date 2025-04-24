@@ -1,0 +1,38 @@
+meta {
+  name: Upload Metadata
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{winter}}/ipfs
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+      "type": "ObjectEvent",
+      "eventTime": "2023-12-01T00:00:00",
+      "eventTimeZoneOffset": "+00:00",
+      "quantityList": [
+          {
+              "itemClass": "Harv-Kalamata-Dec-24"
+          }
+      ],
+      "action": "ADD",
+      "bizStep": "harvesting",
+      "readPoint": {
+          "id": "Aristodimeio, Messinia Region, Greece"
+      },
+      "bizLocation": {
+          "id": "LIORIZA-STAVROPOULOS ESTATE L.P."
+      },
+      "ilmd": {
+          "oliveOilType": "Extra Virgin",
+          "oliveOilSubType": "Cold Pressed",
+          "expirationDate": "2026-06-30",
+          "harvestMethod": "Hand Picked"
+      }
+  }
+}

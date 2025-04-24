@@ -31,6 +31,7 @@ export class CreateCheckDto {
     description: 'additionalInfo',
     type: 'object',
     example: null,
+    additionalProperties: true,
   })
   @IsOptional()
   additionalInfo?: tokenizeCommodity | recreateCommodity;
