@@ -1,6 +1,7 @@
 See docs: https://docs-winter.palmyra.app/docs/Backend/overview
 
 # Winter Cardano Backend
+Winter protocol service for the Cardano blockchain. Metadata standard follows the [EPCIS](https://www.gs1.org/standards/epcis) stanard.
 
 ## Requirements
 1. [Ogmios](https://ogmios.dev)
