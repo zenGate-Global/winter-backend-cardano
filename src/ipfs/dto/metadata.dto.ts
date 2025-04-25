@@ -7,8 +7,9 @@ import {
   IsNumber,
   IsBoolean,
   IsISO8601,
+  IsDataURI,
 } from 'class-validator';
-import { IsEventTimeZoneOffset } from './isEventTimeZoneOffset';
+import { IsEventTimeZoneOffset } from './epcis_validators/isEventTimeZoneOffset';
 
 type EventType =
   | 'ObjectEvent'
@@ -29,7 +30,7 @@ class BusinessLocationID extends LocationID {}
 type BusinessStepID = string;
 type DispositionID = string;
 type BusinessTransactionTypeID = string;
-type ItemClass = string;
+type EPCClass = string;
 type SourceDestTypeID = string;
 type PartyID = string;
 type SourceDestID = PartyID
@@ -38,15 +39,16 @@ type SensorPropertyTypeID = string;
 type MircroorganismID = string;
 type ChemicalSubstanceID = string;
 type ResourceID = string;
-type Item = string;
+type EPC = string;
 type BusinessTransactionID = string;
 type DateTimeStamp = string;
 type CertificationDetails = string;
+type URI = string;
 
 class QuantityElement {
   @IsNotEmpty()
   @IsString()
-  itemClass: ItemClass;
+  epcClass: EPCClass;
 
   @IsOptional()
   @IsNumber()
@@ -147,7 +149,7 @@ class SensorMetadata {
 
   @IsOptional()
   @IsString()
-  deviceID: Item;
+  deviceID: EPC;
 
   @IsOptional()
   @IsString()
@@ -177,7 +179,7 @@ class SensorReport {
 
   @IsOptional()
   @IsString()
-  deviceID: Item;
+  deviceID: EPC;
 
   @IsOptional()
   @IsString()
@@ -324,7 +326,7 @@ export class ObjectEvent extends Event {
   @IsString({
     each: true,
   })
-  itemList: Item[];
+  epcList: EPC[];
 
   @IsOptional()
   @ValidateNested({ each: true })
@@ -378,11 +380,11 @@ export class ObjectEvent extends Event {
 export class AggregationEvent extends Event {
   @IsOptional()
   @IsString()
-  parentID: Item;
+  parentID: EPC;
 
   @IsOptional()
   @IsString({ each: true })
-  childItems: Item[];
+  childEPCs: EPC[];
 
   @IsOptional()
   @ValidateNested({ each: true })
@@ -433,13 +435,14 @@ export class TransactionEvent extends Event {
 
   @IsOptional()
   @IsString()
-  parentID: Item;
+  @IsDataURI()
+  parentID: URI;
 
   @IsOptional()
   @IsString({
     each: true,
   })
-  itemList: Item[];
+  epcList: EPC[];
 
   @IsOptional()
   @ValidateNested({ each: true })
@@ -484,7 +487,7 @@ export class TransformationEvent extends Event {
   @IsString({
     each: true,
   })
-  inputItemList: Item[];
+  inputEPCList: EPC[];
 
   @IsOptional()
   @ValidateNested({ each: true })
@@ -494,7 +497,7 @@ export class TransformationEvent extends Event {
   @IsString({
     each: true,
   })
-  outputItemList: Item[];
+  outputEPCList: EPC[];
 
   @IsOptional()
   @ValidateNested({ each: true })
@@ -547,11 +550,11 @@ export class TransformationEvent extends Event {
 export class AssociationEvent extends Event {
   @IsOptional()
   @IsString()
-  parentID: Item;
+  parentID: URI;
 
   @IsOptional()
   @IsString({ each: true })
-  childItems: Item[];
+  childItems: EPC[];
 
   @IsOptional()
   @ValidateNested({ each: true })
