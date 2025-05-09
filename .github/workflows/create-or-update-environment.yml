@@ -139,7 +139,7 @@ jobs:
             --region ${{ vars.GCP_REGION }} \
             --project ${{ vars.GCP_PROJECT_ID }} \
             --network ${{ vars.GCP_NETWORK }} \
-            --subnet ${{ vars.GCP_SUBNET }} \docker
+            --subnet ${{ vars.GCP_SUBNET }} \
             --execution-environment gen2 \
             --min-instances ${{ env.MIN_INSTANCES }} \
             --max-instances 2 \
