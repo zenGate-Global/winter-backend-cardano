@@ -139,7 +139,7 @@ jobs:
             --region ${{ vars.GCP_REGION }} \
             --project ${{ vars.GCP_PROJECT_ID }} \
             --network ${{ vars.GCP_NETWORK }} \
-            --subnet ${{ vars.GCP_SUBNET }} \
+            --subnet ${{ vars.GCP_SUBNET }} \docker
             --execution-environment gen2 \
             --min-instances ${{ env.MIN_INSTANCES }} \
             --max-instances 2 \
@@ -148,7 +148,7 @@ jobs:
             --port 4000 \
             --add-cloudsql-instances $DB_INSTANCE_CONNECTION_NAME \
             --set-env-vars "NETWORK=${{ vars.NETWORK }}" \
-            --set-env-vars "ZENGATE_WALLET_MNEMONIC=${{ vars.ZENGATE_WALLET_MNEMONIC }}" \
+            --set-env-vars "ZENGATE_WALLET_MNEMONIC=${{ secrets.ZENGATE_WALLET_MNEMONIC }}" \
             --set-env-vars "OGMIOS_HOST=${{ vars.OGMIOS_HOST }}" \
             --set-env-vars "OGMIOS_PORT=${{ vars.OGMIOS_PORT }}" \
             --set-env-vars "BLOCKFROST_KEY=${{ vars.BLOCKFROST_KEY }}" \
