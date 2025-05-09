@@ -145,7 +145,7 @@ jobs:
             --max-instances 2 \
             --concurrency 1000 \
             --allow-unauthenticated \
-            --port 4000 \
+            --port 3000 \
             --add-cloudsql-instances $DB_INSTANCE_CONNECTION_NAME \
             --set-env-vars "NETWORK=${{ vars.NETWORK }}" \
             --set-env-vars "ZENGATE_WALLET_MNEMONIC=${{ secrets.ZENGATE_WALLET_MNEMONIC }}" \
