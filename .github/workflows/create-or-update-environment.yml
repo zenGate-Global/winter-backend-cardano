@@ -1,0 +1,182 @@
+name: Create or Update an environment
+run-name: Create or Update ${{ inputs.shortName || (github.ref_name == 'main' && 'prod') || (github.ref_name == 'dev' && 'dev') || github.ref_name }}
+
+on:
+#  pull_request:
+#    types: [opened, reopened]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: environment
+      shortName:
+        description: 'Short name used, for example, as prefix for resources, labels, etc.'
+        required: false
+jobs:
+
+  deploy:
+    name: Create a new environment
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || (github.ref_name == 'main' && 'staging') || 'development' }}
+    env:
+      DB_INSTANCE_CONNECTION_NAME: "${{ vars.GCP_PROJECT_ID }}:${{ vars.GCP_REGION }}:${{ vars.DB_INSTANCE }}"
+#      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+#      REGION: asia-southeast1
+#      SHORT_NAME: ${{ inputs.shortName || (github.ref_name == 'main' && 'prod') || (github.ref_name == 'dev' && 'stg') || 'devxx' }}
+#      SHORT_NAME: ${{ inputs.shortName || (github.ref_name == 'main' && 'prod') || (startsWith(github.ref_name, 'release/') && 'stg') || 'dev' }}
+#      SQL_INSTANCE_NAME: ${{ vars.DB_INSTANCE }}
+#      DB_USER: appuser
+#      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev"
+
+      - name: Set dynamic ENV
+        run: |
+          if [[ "${{ inputs.shortName }}" != "" ]]; then
+            SHORT_NAME="${{ inputs.shortName }}"
+            TAG_NAME="${{ inputs.shortName }}"
+          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+            SHORT_NAME="staging"
+            TAG_NAME="latest"
+          elif [[ "${{ github.ref_name }}" == "dev" ]]; then
+            SHORT_NAME="dev"
+            TAG_NAME="dev"
+          else
+            SHORT_NAME="devxx" # TODO: This is the feature branch
+            TAG_NAME="devxx" # TODO: This is the feature branch
+          fi
+
+          echo "SHORT_NAME=$SHORT_NAME" >> $GITHUB_ENV
+          echo "TAG_NAME=$SHORT_NAME" >> $GITHUB_ENV
+          
+          if [[ "$SHORT_NAME" == "staging" ]]; then
+            MIN_INSTANCES=1
+          else
+            MIN_INSTANCES=0
+          fi
+          echo "MIN_INSTANCES=$MIN_INSTANCES" >> $GITHUB_ENV
+          
+          echo "GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}" >> $GITHUB_ENV
+          echo "GCP_PROJECT_NUMBER=$(gcloud projects describe ${{ vars.GCP_PROJECT_ID }} --format='value(projectNumber)')" >> $GITHUB_ENV
+          echo "GCP_DB_PASSWORD_SECRET_NAME=DB_PASSWORD_$(echo "${{ vars.DB_INSTANCE }}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')" >> $GITHUB_ENV
+          
+          echo "DB_NAME=winter-cardano-db-$SHORT_NAME" >> $GITHUB_ENV
+          # echo "DB_HOST=$(gcloud sql instances describe ${{ vars.DB_INSTANCE }} --format=json | jq -r '.ipAddresses[] | select(.type == "PRIMARY") | .ipAddress')" >> $GITHUB_ENV
+          echo "DB_HOST=/cloudsql/${DB_INSTANCE_CONNECTION_NAME}" >> $GITHUB_ENV
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >>  $GITHUB_ENV
+          echo "DB_USER=${{ vars.DB_USER }}" >> $GITHUB_ENV
+          echo "DB_PORT=${{ vars.DB_PORT }}" >> $GITHUB_ENV
+
+      - name: Install Cloud SQL Auth Proxy
+        run: |
+          curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.15.2/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          sudo mv cloud-sql-proxy /usr/local/bin/
+
+      - name: Start Cloud SQL Proxy
+        run: |
+          cloud-sql-proxy $DB_INSTANCE_CONNECTION_NAME --credentials-file=$GOOGLE_APPLICATION_CREDENTIALS --port 5432 &
+
+          # Wait and check if port is open
+          for i in {1..10}; do
+            echo "Checking if proxy is up (attempt $i)..."
+            nc -z 127.0.0.1 5432 && break
+            sleep 2
+          done
+
+          # Final check
+          if ! nc -z 127.0.0.1 5432; then
+            echo "❌ Cloud SQL Proxy failed to start."
+            exit 1
+          fi
+
+          echo "✅ Cloud SQL Proxy is up and running."
+
+
+      - name: Check if database exists
+        id: check-db
+        env:
+          PGPASSWORD: ${{ env.DB_PASSWORD }}
+        run: |
+          DB_EXISTS=$(psql -h 127.0.0.1 -U $DB_USER -d postgres \
+            -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 && echo true || echo false)
+
+          echo "exists=$DB_EXISTS" >> $GITHUB_OUTPUT
+
+      - name: Create Cloud SQL schema
+        if: steps.check-db.outputs.exists == 'false'
+        run: |
+          gcloud sql databases create $DB_NAME --instance=${{ vars.DB_INSTANCE }}
+
+#     TODO: From here, should be in a external Deploy API workflow and reuse it.
+
+      - name: API. Build and Push Docker Image
+        run: |
+          docker build -t ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/winter-cardano-images/winter-cardano-api:$TAG_NAME -f ./apps/api/Dockerfile .
+          docker push ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/winter-cardano-images/winter-cardano-api:$TAG_NAME
+
+      - name: API. Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SHORT_NAME-winter-cardano-api \
+            --image ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/winter-cardano-images/winter-cardano-api:$TAG_NAME \
+            --region ${{ vars.GCP_REGION }} \
+            --project ${{ vars.GCP_PROJECT_ID }} \
+            --network ${{ vars.GCP_NETWORK }} \
+            --subnet ${{ vars.GCP_SUBNET }} \
+            --execution-environment gen2 \
+            --min-instances ${{ env.MIN_INSTANCES }} \
+            --max-instances 2 \
+            --concurrency 1000 \
+            --allow-unauthenticated \
+            --port 4000 \
+            --add-cloudsql-instances $DB_INSTANCE_CONNECTION_NAME \
+            --set-env-vars "NETWORK=${{ vars.NETWORK }}" \
+            --set-env-vars "ZENGATE_WALLET_MNEMONIC=${{ vars.ZENGATE_WALLET_MNEMONIC }}" \
+            --set-env-vars "OGMIOS_HOST=${{ vars.OGMIOS_HOST }}" \
+            --set-env-vars "OGMIOS_PORT=${{ vars.OGMIOS_PORT }}" \
+            --set-env-vars "BLOCKFROST_KEY=${{ vars.BLOCKFROST_KEY }}" \
+            --set-env-vars "PINATA_JWT=${{ vars.PINATA_JWT }}" \
+            --set-env-vars "NEXT_PUBLIC_GATEWAY_URL=${{ vars.NEXT_PUBLIC_GATEWAY_URL }}" \
+            --set-env-vars "REDIS_HOST=${{ vars.REDIS_IP }}" \
+            --set-env-vars "REDIS_PORT=${{ vars.REDIS_PORT }}" \
+            --set-env-vars "POSTGRES_DB=${{ env.DB_NAME }}" \
+            --set-env-vars "POSTGRES_HOST=${{ env.DB_HOST }}" \
+            --set-env-vars "POSTGRES_PORT=${{ vars.DB_PORT }}" \
+            --set-env-vars "POSTGRES_USER=${{ vars.DB_USER }}" \
+            --set-secrets  "POSTGRES_PASSWORD=${{ env.GCP_DB_PASSWORD_SECRET_NAME }}:latest" \
+            --set-env-vars "POSTGRES_SYNC=true" \
+            --set-env-vars "POSTGRES_LOGGING=true" \
+            --labels "env_short_name=${{ env.SHORT_NAME }}"
+
+          # TODO: Better if Firebase is routing this service into a static context path
+          # TODO: Ask what is this?
+          gcloud run services add-iam-policy-binding $SHORT_NAME-winter-cardano-api \
+            --region ${{ vars.GCP_REGION }} \
+            --project ${{ vars.GCP_PROJECT_ID }} \
+            --member="allUsers" \
+            --role="roles/run.invoker"
+
+          echo "API_URL=https://$SHORT_NAME-winter-cardano-api-${GCP_PROJECT_NUMBER}.${{ vars.GCP_REGION }}.run.app" >> $GITHUB_ENV
+
+      - name: API. Comment on PR with endpoint URL
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          message: |
+            ✅ NN API deployed to: "$API_URL"
