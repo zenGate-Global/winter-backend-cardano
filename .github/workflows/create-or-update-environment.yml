@@ -146,7 +146,6 @@ jobs:
             --concurrency 1000 \
             --allow-unauthenticated \
             --memory 1Gi \
-            --set-startup-timeout 500 \
             --port 3000 \
             --add-cloudsql-instances $DB_INSTANCE_CONNECTION_NAME \
             --set-env-vars "NETWORK=${{ vars.NETWORK }}" \
