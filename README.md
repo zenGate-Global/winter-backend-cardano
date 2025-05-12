@@ -1,7 +1,9 @@
-See docs: https://docs-winter.palmyra.app/docs/Backend/overview
-
 # Winter Cardano Backend
-Winter protocol service for the Cardano blockchain. Metadata standard follows the [EPCIS](https://www.gs1.org/standards/epcis) stanard. **Note: This application should be considered an MVP/POC.**
+Winter protocol service for the Cardano blockchain. Metadata standard follows the [EPCIS](https://www.gs1.org/standards/epcis) stanard. 
+
+To see the OpenAPI sepcification, along with other usage details and example, please check documentation [overview](https://docs-winter.palmyra.app/docs/Backend/overview).
+
+**Note: This application should be considered an MVP/PoC.**
 
 ## Requirements
 1. [Ogmios](https://ogmios.dev)

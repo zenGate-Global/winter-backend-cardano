@@ -1,5 +1,5 @@
 # Winter Manual
-Comprehensive guide to using the winter-backend-cardano application.
+Comprehensive guide to setting up and running the winter-backend-cardano application. 
 
 ## Requirements
 In order to proceed with installing and running the application, make sure you have the following installed:
