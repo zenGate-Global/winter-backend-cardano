@@ -11,6 +11,10 @@ services:
       - redis
       - db
     restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   redis:
     image: redis
