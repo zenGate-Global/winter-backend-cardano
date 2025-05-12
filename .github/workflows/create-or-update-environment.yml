@@ -146,7 +146,7 @@ jobs:
             --concurrency 1000 \
             --allow-unauthenticated \
             --memory 1Gi \
-            --port 3000 \
+            --port 4000 \
             --add-cloudsql-instances $DB_INSTANCE_CONNECTION_NAME \
             --set-env-vars "NETWORK=${{ vars.NETWORK }}" \
             --set-env-vars "ZENGATE_WALLET_MNEMONIC=${{ secrets.ZENGATE_WALLET_MNEMONIC }}" \
@@ -164,7 +164,6 @@ jobs:
             --set-secrets  "POSTGRES_PASSWORD=${{ env.GCP_DB_PASSWORD_SECRET_NAME }}:latest" \
             --set-env-vars "POSTGRES_SYNC=true" \
             --set-env-vars "POSTGRES_LOGGING=true" \
-            --set-env-vars "PORT=3000" \
             --labels "env_short_name=${{ env.SHORT_NAME }}"
 
           # TODO: Better if Firebase is routing this service into a static context path
