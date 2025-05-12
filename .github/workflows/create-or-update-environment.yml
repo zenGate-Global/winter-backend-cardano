@@ -164,6 +164,7 @@ jobs:
             --set-secrets  "POSTGRES_PASSWORD=${{ env.GCP_DB_PASSWORD_SECRET_NAME }}:latest" \
             --set-env-vars "POSTGRES_SYNC=true" \
             --set-env-vars "POSTGRES_LOGGING=true" \
+            --set-env-vars "PORT=3000" \
             --labels "env_short_name=${{ env.SHORT_NAME }}"
 
           # TODO: Better if Firebase is routing this service into a static context path

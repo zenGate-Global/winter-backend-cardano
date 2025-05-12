@@ -8,3 +8,4 @@ export const ZENGATE_MNEMONIC = () =>
 export const OGMIOS_HOST = () => process.env.OGMIOS_HOST as string;
 
 export const OGMIOS_PORT = () => parseInt(process.env.OGMIOS_PORT as string);
+export const PORT = () => process.env.PORT as string;
