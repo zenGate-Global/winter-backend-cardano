@@ -31,5 +31,8 @@ In order to submit data to IPFS and then mint an NFT on the Cardano blockchain s
 
 `GET /check/:id`: Include the job id as a query parameter to get the status of the job. If there is a `SUCCESS` status, then the response will also contain a valid Cardano transaction id, which can be used to look up the transaction on the explorer corresponding to the Cardano network type used to run the application. Note that the transaction may not appear immediately, since there will be a delay until it is confirmed to be included inside a block.
 
-## Developer Resources and Best Practices
+## Winter Manual
 To get more in-depth information on how to setup the application and the environment variables, along with how to use the application, please check the following [winter-manual](./docs/WINTER-MANUAL.md).
+
+## Best Practices
+To see best practices for deployment of the application and dealing with different types of metadata, please check the following [best-practices](./docs/BEST-PRACTICES.md)
