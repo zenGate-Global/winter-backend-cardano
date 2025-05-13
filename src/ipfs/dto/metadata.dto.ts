@@ -19,7 +19,80 @@ type EventType =
   | 'TransactionEvent';
 type EventID = string;
 type Action = 'ADD' | 'OBSERVE' | 'DELETE';
-type UOM = 'kg' | 'g' | 'lb' | 'oz' | 'l' | 'ml' | 'm3' | 'cm3' | 'ft3' | 'in3';
+type UOM = string;
+const UOMCodes = [
+  '28',
+  '2N',
+  '4H',
+  '4K',
+  '4P',
+  'A24',
+  'A86',
+  'A94',
+  'B22',
+  'B32',
+  'B43',
+  'B49',
+  'B61',
+  'BAR',
+  'C16',
+  'C24',
+  'C26',
+  'C45',
+  'C62',
+  'C65',
+  'C91',
+  'C94',
+  'CDL',
+  'CEL',
+  'CMQ',
+  'CMT',
+  'D33',
+  'D52',
+  'D74',
+  'DAY',
+  'DD',
+  'E01',
+  'E32',
+  'FAR',
+  'GM',
+  'GRM',
+  'HTZ',
+  'HUR',
+  'KEL',
+  'KGM',
+  'KGS',
+  'KHZ',
+  'KL',
+  'KMQ',
+  'KVT',
+  'KWT',
+  'L2',
+  'LTR',
+  'LUM',
+  'LUX',
+  'MBR',
+  'MHZ',
+  'MIN',
+  'MMK',
+  'MMQ',
+  'MMT',
+  'MPA',
+  'MQH',
+  'MQS',
+  'MTK',
+  'MTQ',
+  'MTR',
+  'MTS',
+  'NEW',
+  'NU',
+  'OHM',
+  'P1',
+  'PAL',
+  'SEC',
+  'VLT',
+  'WTT'
+]
 class LocationID {
   @IsNotEmpty()
   @IsString()
@@ -56,7 +129,7 @@ class QuantityElement {
 
   @IsOptional()
   @IsString()
-  @IsIn(['kg', 'g', 'lb', 'oz', 'l', 'ml', 'm3', 'cm3', 'ft3', 'in3'])
+  @IsIn(UOMCodes)
   uom: UOM;
 }
 
@@ -257,6 +330,7 @@ class SensorReport {
 
   @IsOptional()
   @IsString()
+  @IsIn(UOMCodes)
   uom: UOM;
 
   @IsOptional()
