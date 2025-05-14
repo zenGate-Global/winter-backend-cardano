@@ -35,4 +35,4 @@ In order to submit data to IPFS and then mint an NFT on the Cardano blockchain s
 To get more in-depth information on how to setup the application and the environment variables, along with how to use the application, please check the following [winter-manual](./docs/WINTER-MANUAL.md).
 
 ## Best Practices
-To see best practices for deployment of the application and dealing with different types of metadata, please check the following [best-practices](./docs/BEST-PRACTICES.md)
+To see best practices for deployment of the application and dealing with different types of metadata, please check the following [best-practices](./docs/BEST-PRACTICES.md).
