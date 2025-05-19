@@ -353,7 +353,8 @@ type TransformationID = string;
 
 export class Event {
 
-  @IsNotEmpty()
+  //@IsNotEmpty()
+  @IsOptional()
   @IsString()
   @IsIn([
     'ObjectEvent',
@@ -364,7 +365,8 @@ export class Event {
   ])
   type: EventType;
 
-  @IsNotEmpty()
+  //@IsNotEmpty()
+  @IsOptional()
   @IsISO8601({
     strict: true,
     strictSeparator: true,
@@ -378,7 +380,8 @@ export class Event {
   })
   recordTime: DateTimeStamp;
 
-  @IsNotEmpty()
+  //@IsNotEmpty()
+  @IsOptional()
   @IsEventTimeZoneOffset()
   eventTimeZoneOffset: string;
 
@@ -406,7 +409,8 @@ export class ObjectEvent extends Event {
   @ValidateNested({ each: true })
   quantityList: QuantityElement[];
 
-  @IsNotEmpty()
+  //@IsNotEmpty()
+  @IsOptional()
   @IsString()
   @IsIn(['ADD', 'OBSERVE', 'DELETE'])
   action: Action;
@@ -464,7 +468,8 @@ export class AggregationEvent extends Event {
   @ValidateNested({ each: true })
   childQuantityList: QuantityElement[];
 
-  @IsNotEmpty()
+  //@IsNotEmpty()
+  @IsOptional()
   @IsString()
   @IsIn(['ADD', 'OBSERVE', 'DELETE'])
   action: Action;
@@ -522,7 +527,8 @@ export class TransactionEvent extends Event {
   @ValidateNested({ each: true })
   quantityList: QuantityElement[];
 
-  @IsNotEmpty()
+  //@IsNotEmpty()
+  @IsOptional()
   @IsString()
   @IsIn(['ADD', 'OBSERVE', 'DELETE'])
   action: Action;
@@ -634,7 +640,8 @@ export class AssociationEvent extends Event {
   @ValidateNested({ each: true })
   childQuantityList: QuantityElement[];
 
-  @IsNotEmpty()
+  //@IsNotEmpty()
+  @IsOptional()
   @IsString()
   @IsIn(['ADD', 'OBSERVE', 'DELETE'])
   action: Action;
