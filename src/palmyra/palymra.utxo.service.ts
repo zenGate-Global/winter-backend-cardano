@@ -108,6 +108,15 @@ export class UtxoService {
     return [...confirmedUtxos, ...unconfirmedUtxos];
   }
 
+  async getNonMempoolUtxos(utxos: UTxO[]): Promise<UTxO[]> {
+    const unconfirmedInputs: TransactionOutputReference[] = await this.getUnconfirmedInputs();
+    return utxos.filter((utxo) => {
+      return !unconfirmedInputs.some((input) => {
+        return (input.transaction.id === utxo.input.txHash) && (input.index === utxo.input.outputIndex);
+      });
+    });
+  }
+
 }
 
 // export const createContext = () =>
@@ -237,18 +246,18 @@ export class UtxoService {
 //   return [...confirmedUtxos, ...unconfirmedUtxos];
 // }
 
-export async function getNonMempoolUtxos(utxos: UTxO[]) {
-  const unconfirmedInputs: TransactionOutputReference[] =
-    await getUnconfirmedInputs();
-  return utxos.filter((utxo) => {
-    return !unconfirmedInputs.some((input) => {
-      return (
-        input.transaction.id === utxo.input.txHash &&
-        input.index === utxo.input.outputIndex
-      );
-    });
-  });
-}
+// export async function getNonMempoolUtxos(utxos: UTxO[]) {
+//   const unconfirmedInputs: TransactionOutputReference[] =
+//     await getUnconfirmedInputs();
+//   return utxos.filter((utxo) => {
+//     return !unconfirmedInputs.some((input) => {
+//       return (
+//         input.transaction.id === utxo.input.txHash &&
+//         input.index === utxo.input.outputIndex
+//       );
+//     });
+//   });
+// }
 
 export function getTotalLovelace(utxos: UTxO[]): bigint {
   return utxos.reduce(
