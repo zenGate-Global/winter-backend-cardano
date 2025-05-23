@@ -76,6 +76,49 @@ export class UtxoService {
     return unconfirmedOutputs;
   }
 
+  async getUnconfirmedInputs(): Promise<TransactionOutputReference[]> {
+
+    const transactions = await this.flushMempool();
+
+    return transactions.flatMap((tx) => tx.inputs).map((input) => {
+      return {
+        transaction: {
+          id: input.tx_hash
+        },
+        index: input.output_index
+      }
+    });
+    
+  }
+
+  private mapValueToAmount(value: any) {
+    const amount: Asset[] = [];
+
+    // Map ADA (lovelace)
+    if (value.ada && value.ada.lovelace) {
+      amount.push({
+        unit: 'lovelace',
+        quantity: value.ada.lovelace.toString(),
+      });
+    }
+
+    // Map other tokens
+    for (const tokenId in value) {
+      if (tokenId !== 'ada') {
+        const policyId = tokenId.substring(0, 56);
+
+        for (const tokenName in value[tokenId]) {
+          amount.push({
+            unit: `${policyId}${tokenName}`,
+            quantity: value[tokenId][tokenName].toString(),
+          });
+        }
+      }
+    }
+
+    return amount;
+  }
+
 }
 
 // export const createContext = () =>
@@ -143,67 +186,67 @@ export class UtxoService {
 //   return unconfirmedOutputs;
 // }
 
-export async function getUnconfirmedInputs(): Promise<
-  TransactionOutputReference[]
-> {
-  const context = await createContext();
-  const client = await createMempoolMonitoringClient(context);
+// export async function getUnconfirmedInputs(): Promise<
+//   TransactionOutputReference[]
+// > {
+//   const context = await createContext();
+//   const client = await createMempoolMonitoringClient(context);
 
-  await client.acquireMempool();
-  const transactions = await flushMempool(client);
-  await client.shutdown();
+//   await client.acquireMempool();
+//   const transactions = await flushMempool(client);
+//   await client.shutdown();
 
-  return transactions.map((t) => t.inputs).flat();
-}
+//   return transactions.map((t) => t.inputs).flat();
+// }
 
-function mapValueToAmount(value) {
-  const amount: Asset[] = [];
+// function mapValueToAmount(value) {
+//   const amount: Asset[] = [];
 
-  // Map ADA (lovelace)
-  if (value.ada && value.ada.lovelace) {
-    amount.push({
-      unit: 'lovelace',
-      quantity: value.ada.lovelace.toString(),
-    });
-  }
+//   // Map ADA (lovelace)
+//   if (value.ada && value.ada.lovelace) {
+//     amount.push({
+//       unit: 'lovelace',
+//       quantity: value.ada.lovelace.toString(),
+//     });
+//   }
 
-  // Map other tokens
-  for (const tokenId in value) {
-    if (tokenId !== 'ada') {
-      const policyId = tokenId.substring(0, 56);
+//   // Map other tokens
+//   for (const tokenId in value) {
+//     if (tokenId !== 'ada') {
+//       const policyId = tokenId.substring(0, 56);
 
-      for (const tokenName in value[tokenId]) {
-        amount.push({
-          unit: `${policyId}${tokenName}`,
-          quantity: value[tokenId][tokenName].toString(),
-        });
-      }
-    }
-  }
+//       for (const tokenName in value[tokenId]) {
+//         amount.push({
+//           unit: `${policyId}${tokenName}`,
+//           quantity: value[tokenId][tokenName].toString(),
+//         });
+//       }
+//     }
+//   }
 
-  return amount;
-}
+//   return amount;
+// }
 
-export async function getAllUtxOs(
-  utxos: UTxO[],
-  addresses: string[],
-): Promise<UTxO[]> {
-  const finalUtxos: UTxO[] = [...utxos];
-  const unconfirmedUtxos: UTxO[] = await getUnconfirmedOutputs(addresses);
-  const unconfirmedInputs: TransactionOutputReference[] =
-    await getUnconfirmedInputs();
+// export async function getAllUtxOs(
+//   utxos: UTxO[],
+//   addresses: string[],
+// ): Promise<UTxO[]> {
+//   const finalUtxos: UTxO[] = [...utxos];
+//   const unconfirmedUtxos: UTxO[] = await getUnconfirmedOutputs(addresses);
+//   const unconfirmedInputs: TransactionOutputReference[] =
+//     await getUnconfirmedInputs();
 
-  const confirmedUtxos = finalUtxos.filter((utxo) => {
-    return !unconfirmedInputs.some((input) => {
-      return (
-        input.transaction.id === utxo.input.txHash &&
-        input.index === utxo.input.outputIndex
-      );
-    });
-  });
+//   const confirmedUtxos = finalUtxos.filter((utxo) => {
+//     return !unconfirmedInputs.some((input) => {
+//       return (
+//         input.transaction.id === utxo.input.txHash &&
+//         input.index === utxo.input.outputIndex
+//       );
+//     });
+//   });
 
-  return [...confirmedUtxos, ...unconfirmedUtxos];
-}
+//   return [...confirmedUtxos, ...unconfirmedUtxos];
+// }
 
 export async function getNonMempoolUtxos(utxos: UTxO[]) {
   const unconfirmedInputs: TransactionOutputReference[] =
