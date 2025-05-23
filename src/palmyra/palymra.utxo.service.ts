@@ -62,7 +62,7 @@ export class UtxoService {
             },
             output: {
               address: output.address,
-              amount: mapValueToAmount(output.amount),
+              amount: output.amount,
               dataHash: output.data_hash ?? undefined,
               plutusData: output.inline_datum ?? undefined,
               scriptRef: output.reference_script_hash ?? undefined,
@@ -91,32 +91,21 @@ export class UtxoService {
     
   }
 
-  private mapValueToAmount(value: any) {
-    const amount: Asset[] = [];
+  async getAllUtxos(utxos: UTxO[], addresses: string[]): Promise<UTxO[]> {
+    const finalUtxos: UTxO[] = [...utxos];
+    const unconfirmedUtxos: UTxO[] = await this.getUnconfirmedOutputs(addresses);
+    const unconfirmedInputs: TransactionOutputReference[] = await this.getUnconfirmedInputs();
 
-    // Map ADA (lovelace)
-    if (value.ada && value.ada.lovelace) {
-      amount.push({
-        unit: 'lovelace',
-        quantity: value.ada.lovelace.toString(),
+    const confirmedUtxos = finalUtxos.filter((utxo) => {
+      return !unconfirmedInputs.some((input) => {
+        return (
+          input.transaction.id === utxo.input.txHash &&
+          input.index === utxo.input.outputIndex
+        );
       });
-    }
+    });
 
-    // Map other tokens
-    for (const tokenId in value) {
-      if (tokenId !== 'ada') {
-        const policyId = tokenId.substring(0, 56);
-
-        for (const tokenName in value[tokenId]) {
-          amount.push({
-            unit: `${policyId}${tokenName}`,
-            quantity: value[tokenId][tokenName].toString(),
-          });
-        }
-      }
-    }
-
-    return amount;
+    return [...confirmedUtxos, ...unconfirmedUtxos];
   }
 
 }
