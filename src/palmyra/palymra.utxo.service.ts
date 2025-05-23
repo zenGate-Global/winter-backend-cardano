@@ -1,14 +1,8 @@
 import {
-  createInteractionContext,
-  createMempoolMonitoringClient,
-  MempoolMonitoring,
-} from '@cardano-ogmios/client';
-import {
-  Transaction,
   TransactionOutputReference,
 } from '@cardano-ogmios/schema';
 import { Logger } from '@nestjs/common';
-import { Asset, UTxO } from '@meshsdk/core';
+import { UTxO } from '@meshsdk/core';
 import { BlockFrostAPI, Responses } from '@blockfrost/blockfrost-js';
 import { BLOCKFROST_KEY } from 'src/constants';
 
@@ -111,10 +105,23 @@ export class UtxoService {
   async getNonMempoolUtxos(utxos: UTxO[]): Promise<UTxO[]> {
     const unconfirmedInputs: TransactionOutputReference[] = await this.getUnconfirmedInputs();
     return utxos.filter((utxo) => {
-      return !unconfirmedInputs.some((input) => {
+      return !unconfirmedInputs.some((input) => { 
         return (input.transaction.id === utxo.input.txHash) && (input.index === utxo.input.outputIndex);
       });
     });
+  }
+
+  getTotalLovelace(utxos: UTxO[]): bigint {
+    return utxos.reduce(
+      (acc, curr) => {
+        const ada = curr.output.amount.find((a) => a.unit === 'lovelace');
+        if (!ada) {
+          throw new Error('Lovelace not found in UTxO');
+        }
+        return acc + BigInt(ada.quantity)
+      },
+      BigInt(0),
+    );
   }
 
 }
@@ -259,15 +266,15 @@ export class UtxoService {
 //   });
 // }
 
-export function getTotalLovelace(utxos: UTxO[]): bigint {
-  return utxos.reduce(
-    (acc, curr) => {
-      const ada = curr.output.amount.find((a) => a.unit === 'lovelace');
-      if (!ada) {
-        throw new Error('Lovelace not found in UTxO');
-      }
-      return acc + BigInt(ada.quantity)
-    },
-    BigInt(0),
-  );
-}
+// export function getTotalLovelace(utxos: UTxO[]): bigint {
+//   return utxos.reduce(
+//     (acc, curr) => {
+//       const ada = curr.output.amount.find((a) => a.unit === 'lovelace');
+//       if (!ada) {
+//         throw new Error('Lovelace not found in UTxO');
+//       }
+//       return acc + BigInt(ada.quantity)
+//     },
+//     BigInt(0),
+//   );
+// }
