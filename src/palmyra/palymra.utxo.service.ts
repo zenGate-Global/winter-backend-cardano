@@ -9,7 +9,7 @@ import {
 } from '@cardano-ogmios/schema';
 import { Logger } from '@nestjs/common';
 import { Asset, UTxO } from '@meshsdk/core';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import { BlockFrostAPI, Responses } from '@blockfrost/blockfrost-js';
 import { BLOCKFROST_KEY } from 'src/constants';
 
 export class UtxoService {
@@ -23,10 +23,11 @@ export class UtxoService {
     })
   }
 
-   async flushMempool() {
+  async flushMempool(): Promise<Responses["mempool_tx_content"][]> {
 
     const transactions: { tx_hash: string }[] = [];
     let pagecount = 1
+    
     while(true) {
       const tx = await this.bf.mempool({ page: pagecount})
       if (tx.length > 0 && tx.length < 100) {
@@ -39,9 +40,41 @@ export class UtxoService {
         break;
       }
     }
+  
     const hashes = transactions.map(obj => obj.tx_hash)
-    return hashes.map(async (h) => await this.bf.mempoolTx(h))
-   }
+    return Promise.all(hashes.map(async (h) => await this.bf.mempoolTx(h)))
+  }
+  
+  async getUnconfirmedOutputs(
+    addresses: string[],
+  ): Promise<UTxO[]> {
+
+    const unconfirmedOutputs: UTxO[] = [];
+    const transactions = await this.flushMempool();
+
+    for (const tx of transactions) {
+      for (const [index, output] of tx.outputs.entries()) {
+        if (addresses.includes(output.address)) {
+          unconfirmedOutputs.push({
+            input: {
+              outputIndex: index,
+              txHash: tx.tx.hash,
+            },
+            output: {
+              address: output.address,
+              amount: mapValueToAmount(output.amount),
+              dataHash: output.data_hash ?? undefined,
+              plutusData: output.inline_datum ?? undefined,
+              scriptRef: output.reference_script_hash ?? undefined,
+              scriptHash: undefined,
+            },
+          });
+        }
+      }
+    }
+
+    return unconfirmedOutputs;
+  }
 
 }
 
@@ -79,41 +112,36 @@ export class UtxoService {
 //   return transactions;
 // }
 
-export async function getUnconfirmedOutputs(
-  addresses: string[],
-): Promise<UTxO[]> {
-  const context = await createContext();
-  const client = await createMempoolMonitoringClient(context);
-  const unconfirmedOutputs: UTxO[] = [];
+// export async function getUnconfirmedOutputs(
+//   addresses: string[],
+// ): Promise<UTxO[]> {
 
-  await client.acquireMempool();
-  const transactions = await flushMempool(client);
+//   const unconfirmedOutputs: UTxO[] = [];
+//   const transactions = await this.flushMempool();
 
-  await client.shutdown();
+//   for (const tx of transactions) {
+//     for (const [index, output] of tx.outputs.entries()) {
+//       if (addresses.includes(output.address)) {
+//         unconfirmedOutputs.push({
+//           input: {
+//             outputIndex: index,
+//             txHash: tx.id,
+//           },
+//           output: {
+//             address: output.address,
+//             amount: mapValueToAmount(output.value),
+//             dataHash: output.datumHash,
+//             plutusData: output.datum,
+//             scriptRef: output.script?.cbor,
+//             scriptHash: undefined,
+//           },
+//         });
+//       }
+//     }
+//   }
 
-  for (const tx of transactions) {
-    for (const [index, output] of tx.outputs.entries()) {
-      if (addresses.includes(output.address)) {
-        unconfirmedOutputs.push({
-          input: {
-            outputIndex: index,
-            txHash: tx.id,
-          },
-          output: {
-            address: output.address,
-            amount: mapValueToAmount(output.value),
-            dataHash: output.datumHash,
-            plutusData: output.datum,
-            scriptRef: output.script?.cbor,
-            scriptHash: undefined,
-          },
-        });
-      }
-    }
-  }
-
-  return unconfirmedOutputs;
-}
+//   return unconfirmedOutputs;
+// }
 
 export async function getUnconfirmedInputs(): Promise<
   TransactionOutputReference[]
