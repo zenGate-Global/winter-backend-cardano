@@ -8,35 +8,76 @@ import {
   TransactionOutputReference,
 } from '@cardano-ogmios/schema';
 import { Logger } from '@nestjs/common';
-
 import { Asset, UTxO } from '@meshsdk/core';
-import { OGMIOS_HOST, OGMIOS_PORT } from '../constants';
+import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import { BLOCKFROST_KEY } from 'src/constants';
 
-const logger = new Logger('PalmyraUTXO');
+export class UtxoService {
 
-export const createContext = () =>
-  createInteractionContext(
-    (err) => logger.error(err),
-    () => logger.log('Mempool Query Complete'),
-    { connection: { host: OGMIOS_HOST(), port: OGMIOS_PORT() } },
-  );
+  private readonly logger = new Logger(UtxoService.name)
+  private readonly bf: BlockFrostAPI
 
-async function flushMempool(
-  client: MempoolMonitoring.MempoolMonitoringClient,
-): Promise<Transaction[]> {
-  const transactions: Transaction[] = [];
-
-  for (;;) {
-    const transaction = await client.nextTransaction({ fields: 'all' });
-    if (transaction !== null) {
-      transactions.push(transaction);
-    } else {
-      break;
-    }
+  constructor() {
+    this.bf = new BlockFrostAPI({
+      projectId: BLOCKFROST_KEY() as string
+    })
   }
 
-  return transactions;
+   async flushMempool() {
+
+    const transactions: { tx_hash: string }[] = [];
+    let pagecount = 1
+    while(true) {
+      const tx = await this.bf.mempool({ page: pagecount})
+      if (tx.length > 0 && tx.length < 100) {
+
+        transactions.push(...tx);
+      } else if (tx.length == 100) { // 100 is max page count.
+        transactions.push(...tx);
+        pagecount+=1; // Increase the page count to check a new page.
+      } else { // Empty page, so no more results.
+        break;
+      }
+    }
+    const hashes = transactions.map(obj => obj.tx_hash)
+    return hashes.map(async (h) => await this.bf.mempoolTx(h))
+   }
+
 }
+
+// export const createContext = () =>
+//   createInteractionContext(
+//     (err) => logger.error(err),
+//     () => logger.log('Mempool Query Complete'),
+//     { connection: {
+//         address: {
+//           http: "https://cardano-node-ogmios-preview-463523546.asia-southeast1.run.app",
+//           webSocket: "wss://cardano-node-ogmios-preview-463523546.asia-southeast1.run.app",
+//         },
+//         //host: OGMIOS_HOST(),
+//         //port: OGMIOS_PORT(), 
+//         //tls: false,
+//       } 
+//     },
+//   );
+
+
+// async function flushMempool(
+//   client: MempoolMonitoring.MempoolMonitoringClient,
+// ): Promise<Transaction[]> {
+//   const transactions: Transaction[] = [];
+
+//   for (;;) {
+//     const transaction = await client.nextTransaction({ fields: 'all' });
+//     if (transaction !== null) {
+//       transactions.push(transaction);
+//     } else {
+//       break;
+//     }
+//   }
+
+//   return transactions;
+// }
 
 export async function getUnconfirmedOutputs(
   addresses: string[],
