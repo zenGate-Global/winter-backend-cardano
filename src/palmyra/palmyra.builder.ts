@@ -9,7 +9,7 @@ import {
   spendCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
-import { getNonMempoolUtxos, getTotalLovelace } from './palymra.utxo.service';
+import { UtxoService } from './palymra.utxo.service';
 // import axios from 'axios';
 import { Logger } from '@nestjs/common';
 
@@ -119,24 +119,6 @@ export async function buildSpend(
   }
 }
 
-// export async function submitTx(signedTx: string): Promise<string> {
-//   try {
-//     const signedTxCbor = Buffer.from(signedTx, 'hex');
-
-//     const response = await axios.post(TX_SUBMIT_API(), signedTxCbor, {
-//       headers: {
-//         'Content-Type': 'application/cbor',
-//       },
-//       responseType: 'text',
-//     });
-
-//     return response.data.toString().replace(/"/g, '');
-//   } catch (error) {
-//     logger.error('Error submitting transaction:', error.response.data);
-//     throw error.response.data;
-//   }
-// }
-
 async function getWalletUtxosWithRetry(
   winterEvent: EventFactory,
   maxAttempts: number,
@@ -147,9 +129,10 @@ async function getWalletUtxosWithRetry(
 
   while (attemptCount < maxAttempts) {
     try {
+      const utxoService = new UtxoService()
       walletUtxos = await winterEvent.getWalletUtxos();
-      finalUtxos = await getNonMempoolUtxos(walletUtxos);
-      const lovelace = getTotalLovelace(finalUtxos);
+      finalUtxos = await utxoService.getNonMempoolUtxos(walletUtxos);
+      const lovelace = utxoService.getTotalLovelace(finalUtxos);
       if (lovelace >= BigInt(20000000)) {
         break;
       } else {
