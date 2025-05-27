@@ -1,6 +1,3 @@
-import {
-  TransactionOutputReference,
-} from '@cardano-ogmios/schema';
 import { Logger } from '@nestjs/common';
 import { UTxO } from '@meshsdk/core';
 import { BlockFrostAPI, Responses } from '@blockfrost/blockfrost-js';
@@ -70,16 +67,14 @@ export class UtxoService {
     return unconfirmedOutputs;
   }
 
-  async getUnconfirmedInputs(): Promise<TransactionOutputReference[]> {
+  async getUnconfirmedInputs(): Promise<UTxO["input"][]> {
 
     const transactions = await this.flushMempool();
 
     return transactions.flatMap((tx) => tx.inputs).map((input) => {
       return {
-        transaction: {
-          id: input.tx_hash
-        },
-        index: input.output_index
+        outputIndex: input.output_index,
+        txHash: input.tx_hash
       }
     });
     
@@ -88,14 +83,11 @@ export class UtxoService {
   async getAllUtxos(utxos: UTxO[], addresses: string[]): Promise<UTxO[]> {
     const finalUtxos: UTxO[] = [...utxos];
     const unconfirmedUtxos: UTxO[] = await this.getUnconfirmedOutputs(addresses);
-    const unconfirmedInputs: TransactionOutputReference[] = await this.getUnconfirmedInputs();
+    const unconfirmedInputs: UTxO["input"][] = await this.getUnconfirmedInputs();
 
     const confirmedUtxos = finalUtxos.filter((utxo) => {
       return !unconfirmedInputs.some((input) => {
-        return (
-          input.transaction.id === utxo.input.txHash &&
-          input.index === utxo.input.outputIndex
-        );
+        return (input.outputIndex === utxo.input.outputIndex) && (input.txHash === utxo.input.txHash);
       });
     });
 
@@ -103,10 +95,10 @@ export class UtxoService {
   }
 
   async getNonMempoolUtxos(utxos: UTxO[]): Promise<UTxO[]> {
-    const unconfirmedInputs: TransactionOutputReference[] = await this.getUnconfirmedInputs();
+    const unconfirmedInputs: UTxO["input"][] = await this.getUnconfirmedInputs();
     return utxos.filter((utxo) => {
       return !unconfirmedInputs.some((input) => { 
-        return (input.transaction.id === utxo.input.txHash) && (input.index === utxo.input.outputIndex);
+        return (input.outputIndex === utxo.input.outputIndex) && (input.txHash === utxo.input.txHash);
       });
     });
   }
