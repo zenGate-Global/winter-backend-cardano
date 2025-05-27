@@ -24,10 +24,6 @@ We will now explain each variable in the environment file.
 
 `ZENGATE_WALLET_MNEMONIC`: This is the mnemonic to use for paying all the Cardano transaction fees. When wanting to submit transactions to the Cardano blockchain with the running application, make sure this wallet has enough ADA in it. This mnemonic can be created with any valid Cardnao wallet application, e.g. [eternl](https://eternl.io/)
 
-`OGMIOS_HOST`: [Ogmios](https://ogmios.dev) is used for fetching data from the Cardano blockchain. Make sure to use a valid IP address. If you cannot access an existing provider, you will need to host the Ogmios application on your own. Refer to their documentation if this is the case.
-
-`OGMIOS_PORT`: This is the port used to connect to the host for the Ogmios application.
-
 `BLOCKFROST_KEY`: [Blockfrost](https://blockfrost.io) is used for fetching and submitting data on the Cardano blockchain. This API key is necessary for the winter-cardano library. Make an account to obtain a valid API key.
 
 `PINATA_JWT`: [Pinata]() is used for submitting data to IPFS. Make an account to obtain a valid API key.

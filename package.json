@@ -20,7 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
-    "@cardano-ogmios/client": "^6.11.2",
+    "@blockfrost/blockfrost-js": "^6.0.0",
     "@meshsdk/core": "^1.8.14",
     "@nestjs/bull": "^11.0.2",
     "@nestjs/common": "^11.0.1",

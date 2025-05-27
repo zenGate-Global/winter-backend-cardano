@@ -1,163 +1,105 @@
-import {
-  createInteractionContext,
-  createMempoolMonitoringClient,
-  MempoolMonitoring,
-} from '@cardano-ogmios/client';
-import {
-  Transaction,
-  TransactionOutputReference,
-} from '@cardano-ogmios/schema';
 import { Logger } from '@nestjs/common';
+import { UTxO } from '@meshsdk/core';
+import { BlockFrostAPI, Responses } from '@blockfrost/blockfrost-js';
+import { BLOCKFROST_KEY } from 'src/constants';
 
-import { Asset, UTxO } from '@meshsdk/core';
-import { OGMIOS_HOST, OGMIOS_PORT } from '../constants';
+export class UtxoService {
 
-const logger = new Logger('PalmyraUTXO');
+  private readonly logger = new Logger(UtxoService.name)
+  private readonly bf: BlockFrostAPI
 
-export const createContext = () =>
-  createInteractionContext(
-    (err) => logger.error(err),
-    () => logger.log('Mempool Query Complete'),
-    { connection: { host: OGMIOS_HOST(), port: OGMIOS_PORT() } },
-  );
-
-async function flushMempool(
-  client: MempoolMonitoring.MempoolMonitoringClient,
-): Promise<Transaction[]> {
-  const transactions: Transaction[] = [];
-
-  for (;;) {
-    const transaction = await client.nextTransaction({ fields: 'all' });
-    if (transaction !== null) {
-      transactions.push(transaction);
-    } else {
-      break;
-    }
+  constructor() {
+    this.bf = new BlockFrostAPI({
+      projectId: BLOCKFROST_KEY() as string
+    })
   }
 
-  return transactions;
-}
+  async flushMempool(): Promise<Responses["mempool_tx_content"][]> {
 
-export async function getUnconfirmedOutputs(
-  addresses: string[],
-): Promise<UTxO[]> {
-  const context = await createContext();
-  const client = await createMempoolMonitoringClient(context);
-  const unconfirmedOutputs: UTxO[] = [];
+    const transactions: Responses["mempool_content"] = await this.bf.mempoolAll();
+   
+    return Promise.all(transactions.map(async (obj) => await this.bf.mempoolTx(obj.tx_hash)));
 
-  await client.acquireMempool();
-  const transactions = await flushMempool(client);
+  }
+  
+  async getUnconfirmedOutputs(
+    addresses: string[],
+  ): Promise<UTxO[]> {
 
-  await client.shutdown();
+    const unconfirmedOutputs: UTxO[] = [];
+    const transactions = await this.flushMempool();
 
-  for (const tx of transactions) {
-    for (const [index, output] of tx.outputs.entries()) {
-      if (addresses.includes(output.address)) {
-        unconfirmedOutputs.push({
-          input: {
-            outputIndex: index,
-            txHash: tx.id,
-          },
-          output: {
-            address: output.address,
-            amount: mapValueToAmount(output.value),
-            dataHash: output.datumHash,
-            plutusData: output.datum,
-            scriptRef: output.script?.cbor,
-            scriptHash: undefined,
-          },
-        });
+    for (const tx of transactions) {
+      for (const [index, output] of tx.outputs.entries()) {
+        if (addresses.includes(output.address)) {
+          unconfirmedOutputs.push({
+            input: {
+              outputIndex: index,
+              txHash: tx.tx.hash,
+            },
+            output: {
+              address: output.address,
+              amount: output.amount,
+              dataHash: output.data_hash ?? undefined,
+              plutusData: output.inline_datum ?? undefined,
+              scriptRef: output.reference_script_hash ?? undefined,
+              scriptHash: undefined,
+            },
+          });
+        }
       }
     }
+
+    return unconfirmedOutputs;
   }
 
-  return unconfirmedOutputs;
-}
+  async getUnconfirmedInputs(): Promise<UTxO["input"][]> {
 
-export async function getUnconfirmedInputs(): Promise<
-  TransactionOutputReference[]
-> {
-  const context = await createContext();
-  const client = await createMempoolMonitoringClient(context);
+    const transactions = await this.flushMempool();
 
-  await client.acquireMempool();
-  const transactions = await flushMempool(client);
-  await client.shutdown();
+    return transactions.flatMap((tx) => tx.inputs).map((input) => {
+      return {
+        outputIndex: input.output_index,
+        txHash: input.tx_hash
+      }
+    });
+    
+  }
 
-  return transactions.map((t) => t.inputs).flat();
-}
+  async getAllUtxos(utxos: UTxO[], addresses: string[]): Promise<UTxO[]> {
+    const finalUtxos: UTxO[] = [...utxos];
+    const unconfirmedUtxos: UTxO[] = await this.getUnconfirmedOutputs(addresses);
+    const unconfirmedInputs: UTxO["input"][] = await this.getUnconfirmedInputs();
 
-function mapValueToAmount(value) {
-  const amount: Asset[] = [];
+    const confirmedUtxos = finalUtxos.filter((utxo) => {
+      return !unconfirmedInputs.some((input) => {
+        return (input.outputIndex === utxo.input.outputIndex) && (input.txHash === utxo.input.txHash);
+      });
+    });
 
-  // Map ADA (lovelace)
-  if (value.ada && value.ada.lovelace) {
-    amount.push({
-      unit: 'lovelace',
-      quantity: value.ada.lovelace.toString(),
+    return [...confirmedUtxos, ...unconfirmedUtxos];
+  }
+
+  async getNonMempoolUtxos(utxos: UTxO[]): Promise<UTxO[]> {
+    const unconfirmedInputs: UTxO["input"][] = await this.getUnconfirmedInputs();
+    return utxos.filter((utxo) => {
+      return !unconfirmedInputs.some((input) => { 
+        return (input.outputIndex === utxo.input.outputIndex) && (input.txHash === utxo.input.txHash);
+      });
     });
   }
 
-  // Map other tokens
-  for (const tokenId in value) {
-    if (tokenId !== 'ada') {
-      const policyId = tokenId.substring(0, 56);
-
-      for (const tokenName in value[tokenId]) {
-        amount.push({
-          unit: `${policyId}${tokenName}`,
-          quantity: value[tokenId][tokenName].toString(),
-        });
-      }
-    }
+  getTotalLovelace(utxos: UTxO[]): bigint {
+    return utxos.reduce(
+      (acc, curr) => {
+        const ada = curr.output.amount.find((a) => a.unit === 'lovelace');
+        if (!ada) {
+          throw new Error('Lovelace not found in UTxO');
+        }
+        return acc + BigInt(ada.quantity)
+      },
+      BigInt(0),
+    );
   }
 
-  return amount;
-}
-
-export async function getAllUtxOs(
-  utxos: UTxO[],
-  addresses: string[],
-): Promise<UTxO[]> {
-  const finalUtxos: UTxO[] = [...utxos];
-  const unconfirmedUtxos: UTxO[] = await getUnconfirmedOutputs(addresses);
-  const unconfirmedInputs: TransactionOutputReference[] =
-    await getUnconfirmedInputs();
-
-  const confirmedUtxos = finalUtxos.filter((utxo) => {
-    return !unconfirmedInputs.some((input) => {
-      return (
-        input.transaction.id === utxo.input.txHash &&
-        input.index === utxo.input.outputIndex
-      );
-    });
-  });
-
-  return [...confirmedUtxos, ...unconfirmedUtxos];
-}
-
-export async function getNonMempoolUtxos(utxos: UTxO[]) {
-  const unconfirmedInputs: TransactionOutputReference[] =
-    await getUnconfirmedInputs();
-  return utxos.filter((utxo) => {
-    return !unconfirmedInputs.some((input) => {
-      return (
-        input.transaction.id === utxo.input.txHash &&
-        input.index === utxo.input.outputIndex
-      );
-    });
-  });
-}
-
-export function getTotalLovelace(utxos: UTxO[]): bigint {
-  return utxos.reduce(
-    (acc, curr) => {
-      const ada = curr.output.amount.find((a) => a.unit === 'lovelace');
-      if (!ada) {
-        throw new Error('Lovelace not found in UTxO');
-      }
-      return acc + BigInt(ada.quantity)
-    },
-    BigInt(0),
-  );
 }
