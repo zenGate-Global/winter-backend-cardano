@@ -16,24 +16,10 @@ export class UtxoService {
 
   async flushMempool(): Promise<Responses["mempool_tx_content"][]> {
 
-    const transactions: { tx_hash: string }[] = [];
-    let pagecount = 1
-    
-    while(true) {
-      const tx = await this.bf.mempool({ page: pagecount})
-      if (tx.length > 0 && tx.length < 100) {
+    const transactions: Responses["mempool_content"] = await this.bf.mempoolAll();
+   
+    return Promise.all(transactions.map(async (obj) => await this.bf.mempoolTx(obj.tx_hash)));
 
-        transactions.push(...tx);
-      } else if (tx.length == 100) { // 100 is max page count.
-        transactions.push(...tx);
-        pagecount+=1; // Increase the page count to check a new page.
-      } else { // Empty page, so no more results.
-        break;
-      }
-    }
-  
-    const hashes = transactions.map(obj => obj.tx_hash)
-    return Promise.all(hashes.map(async (h) => await this.bf.mempoolTx(h)))
   }
   
   async getUnconfirmedOutputs(
