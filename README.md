@@ -6,12 +6,11 @@ To see the OpenAPI sepcification, along with other usage details and example, pl
 **Note: This application should be considered an MVP/PoC.**
 
 ## Requirements
-1. [Ogmios](https://ogmios.dev)
-2. [Blockfrost](https://blockfrost.io)
-3. [Cardano wallet mnemonic](https://eternl.io)
-4. [Pinata](https://pinata.cloud)
-5. [Docker](https://www.docker.com)
-6. [Bruno](https://www.usebruno.com): If testing API endpoints locally.
+1. [Blockfrost](https://blockfrost.io)
+2. [Cardano wallet mnemonic](https://eternl.io)
+3. [Pinata](https://pinata.cloud)
+4. [Docker](https://www.docker.com)
+5. [Bruno](https://www.usebruno.com): If testing API endpoints locally.
 
 ## Basic Setup
 1. Copy `.env.example` to `.env` and fill in the required environment variables.
@@ -20,7 +19,7 @@ To see the OpenAPI sepcification, along with other usage details and example, pl
 
 ## Important Environment Variables
 - The `NETWORK` can be one of `mainnet` | `preview` | `preprod`.
-- The `OGMIOS_HOST` and `OGMIOS_PORT` should be configured depending on the value used for `NETWORK`. The same is true for `BLOCKFROST_KEY`.
+- The `BLOCKFROST_KEY` should be configured depending on the value used for `NETWORK`.
 
 ## Basic Usage Guideline
 In order to submit data to IPFS and then mint an NFT on the Cardano blockchain serving as a reference to the data, you should make the following API calls:
