@@ -10,6 +10,7 @@ on:
         description: 'Environment'
         required: true
         type: environment
+        default: winter-staging
       shortName:
         description: 'Short name used, for example, as prefix for resources, labels, etc.'
         required: false
