@@ -10,6 +10,7 @@ on:
         description: 'Environment'
         required: true
         type: environment
+        default: winter-staging
       shortName:
         description: 'Short name used, for example, as prefix for resources, labels, etc.'
         required: false
@@ -150,8 +151,6 @@ jobs:
             --add-cloudsql-instances $DB_INSTANCE_CONNECTION_NAME \
             --set-env-vars "NETWORK=${{ vars.NETWORK }}" \
             --set-env-vars "ZENGATE_WALLET_MNEMONIC=${{ secrets.ZENGATE_WALLET_MNEMONIC }}" \
-            --set-env-vars "OGMIOS_HOST=${{ vars.OGMIOS_HOST }}" \
-            --set-env-vars "OGMIOS_PORT=${{ vars.OGMIOS_PORT }}" \
             --set-env-vars "BLOCKFROST_KEY=${{ vars.BLOCKFROST_KEY }}" \
             --set-env-vars "PINATA_JWT=${{ vars.PINATA_JWT }}" \
             --set-env-vars "NEXT_PUBLIC_GATEWAY_URL=${{ vars.NEXT_PUBLIC_GATEWAY_URL }}" \
