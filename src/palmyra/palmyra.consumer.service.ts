@@ -8,7 +8,12 @@ import {
   tokenizeCommodityJob,
 } from '../types/job.dto';
 import { BlockfrostProvider } from '@meshsdk/core';
-import { buildDeployRef, buildMint, buildRecreate, buildSpend } from './palmyra.builder';
+import {
+  buildDeployRef,
+  buildMint,
+  buildRecreate,
+  buildSpend,
+} from './palmyra.builder';
 import { TransactionsService } from '../transactions/transactions.service';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -77,27 +82,54 @@ export class PalmyraConsumerService {
 
   async tokenizeCommodity(job: Job<tokenizeCommodityJob>): Promise<void> {
     try {
-      const { mintTxHash: txid, inputUtxos, tokenName, singleton, contractAddress } = (await buildMint(this.factory, job, true))!;
+      const {
+        mintTxHash: txid,
+        inputUtxos,
+        tokenName,
+        singleton,
+        contractAddress,
+      } = (await buildMint(this.factory, job, true))!;
       if (typeof txid !== 'string') {
         throw new Error(txid);
       }
-      this.logger.log(`Mint successful with singleton: ${singleton} at txid: ${txid}`);
+      this.logger.log(
+        `Mint successful with singleton: ${singleton} at txid: ${txid}`,
+      );
 
       // Check if deployment already exists for this contract address
-      const deploymentExists = await this.deploymentService.deploymentExistsByContractAddress(contractAddress);
+      const deploymentExists =
+        await this.deploymentService.deploymentExistsByContractAddress(
+          contractAddress,
+        );
 
       if (!deploymentExists) {
         try {
-          const deployJob = { ...job.data, deployAddress: this.deployerAddress, utxoRef: { txHash: inputUtxos[0].input.txHash, outputIndex: inputUtxos[0].input.outputIndex } };
-        
-          const deploymentResult = (await buildDeployRef(this.factory, { data: deployJob }, true))!;
-    
-          if (!deploymentResult || typeof deploymentResult.deploymentTxHash !== 'string') {
+          const deployJob = {
+            ...job.data,
+            deployAddress: this.deployerAddress,
+            utxoRef: {
+              txHash: inputUtxos[0].input.txHash,
+              outputIndex: inputUtxos[0].input.outputIndex,
+            },
+          };
+
+          const deploymentResult = (await buildDeployRef(
+            this.factory,
+            { data: deployJob },
+            true,
+          ))!;
+
+          if (
+            !deploymentResult ||
+            typeof deploymentResult.deploymentTxHash !== 'string'
+          ) {
             throw new Error('Invalid deployment result');
           }
-    
-          this.logger.log(`Deployment successful: ${deploymentResult.deploymentTxHash} at output index ${deploymentResult.deploymentOutputIndex}`);
-    
+
+          this.logger.log(
+            `Deployment successful: ${deploymentResult.deploymentTxHash} at output index ${deploymentResult.deploymentOutputIndex}`,
+          );
+
           await this.deploymentService.saveDeployment({
             contractAddress,
             deploymentTxHash: deploymentResult.deploymentTxHash,
@@ -108,7 +140,9 @@ export class PalmyraConsumerService {
           this.logger.error(`Error deploying: ${error}`);
         }
       } else {
-        this.logger.log(`Deployment already exists for contract address: ${contractAddress}`);
+        this.logger.log(
+          `Deployment already exists for contract address: ${contractAddress}`,
+        );
       }
 
       await this.checkDb.update(job.data.id, {

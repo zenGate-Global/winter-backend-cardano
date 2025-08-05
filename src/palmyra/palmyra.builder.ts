@@ -13,8 +13,8 @@ import {
 import { UtxoService } from './palymra.utxo.service';
 // import axios from 'axios';
 import { Logger } from '@nestjs/common';
-import { TxParser } from "@meshsdk/core";
-import { CSLSerializer } from "@meshsdk/core-csl";
+import { TxParser } from '@meshsdk/core';
+import { CSLSerializer } from '@meshsdk/core-csl';
 
 const logger = new Logger('Builder');
 
@@ -22,7 +22,13 @@ export async function buildMint(
   factory: EventFactory,
   job: Job<tokenizeCommodityJob> | { data: tokenizeCommodityJob },
   submit: boolean,
-): Promise<{ mintTxHash: string, inputUtxos: UTxO[], tokenName: string, singleton: string, contractAddress: string } | void> {
+): Promise<{
+  mintTxHash: string;
+  inputUtxos: UTxO[];
+  tokenName: string;
+  singleton: string;
+  contractAddress: string;
+} | void> {
   const walletAddressPK = await factory.getAddressPkHash();
 
   const params: ObjectDatumParameters = {
@@ -50,7 +56,9 @@ export async function buildMint(
   const serializer = new CSLSerializer();
   const txParser = new TxParser(serializer, factory.fetcher as any);
   const txBuilderBody = await txParser.parse(unsignedTx);
-  const singleton = txBuilderBody.outputs[0].amount.find(token => token.unit !== "lovelace")!.unit;
+  const singleton = txBuilderBody.outputs[0].amount.find(
+    (token) => token.unit !== 'lovelace',
+  )!.unit;
 
   // We sign the transaction for the user.
   // In the future, users should be able
@@ -68,7 +76,7 @@ export async function buildMint(
       tokenName: job.data.tokenName,
       singleton,
       contractAddress: txBuilderBody.outputs[0].address,
-    }
+    };
   }
 }
 
@@ -101,7 +109,7 @@ export async function buildDeployRef(
   if (submit) {
     //return submitTx(signedTx);
     const txHash = await factory.submitTx(signedTx);
-      
+
     return {
       deploymentTxHash: txHash,
       deploymentOutputIndex: 0,
@@ -125,24 +133,31 @@ export async function buildRecreate(
 
   const hexDataReferences = job.data.newDataReferences.map((d) =>
     Buffer.from(d, 'utf8').toString('hex'),
-  )
+  );
 
   if (utxos.length !== hexDataReferences.length) {
-    throw new Error('utxos and data references need to be the same length')
+    throw new Error('utxos and data references need to be the same length');
   }
 
   utxos.forEach((utxo, i) => {
-    const assets = utxo.output.amount.filter(asset => asset.unit !== 'lovelace');
+    const assets = utxo.output.amount.filter(
+      (asset) => asset.unit !== 'lovelace',
+    );
     const singleton = assets[0].unit;
     const scriptRefRecord = job.data.utxoRef[utxo.output.address];
     if (scriptRefRecord) {
-      refMap.set(singleton, { singletonScriptRef: undefined, objectEventScriptRef: scriptRefRecord.objectEventScript });
+      refMap.set(singleton, {
+        singletonScriptRef: undefined,
+        objectEventScriptRef: scriptRefRecord.objectEventScript,
+      });
     }
-    const decodedDatum = EventFactory.getObjectDatumFieldsFromPlutusCbor(utxo.output.plutusData!);
+    const decodedDatum = EventFactory.getObjectDatumFieldsFromPlutusCbor(
+      utxo.output.plutusData!,
+    );
     if (decodedDatum.data_reference_hex.bytes === hexDataReferences[i]) {
-      throw new Error('data references need to be updated')
+      throw new Error('data references need to be updated');
     }
-  })
+  });
 
   const completeTx = await factory.recreate(
     walletAddress,
@@ -169,18 +184,22 @@ export async function buildSpend(
   job: Job<spendCommodityJob> | { data: spendCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
-
   const walletAddress = await factory.getWalletAddress();
 
   const utxos = await factory.getUtxosByOutRef(job.data.utxos);
   const refMap = new Map();
 
   for (const utxo of utxos) {
-    const assets = utxo.output.amount.filter(asset => asset.unit !== 'lovelace');
+    const assets = utxo.output.amount.filter(
+      (asset) => asset.unit !== 'lovelace',
+    );
     const singleton = assets[0].unit;
     const scriptRefRecord = job.data.utxoRef[utxo.output.address];
     if (scriptRefRecord) {
-      refMap.set(singleton, { singletonScriptRef: undefined, objectEventScriptRef: scriptRefRecord.objectEventScript });
+      refMap.set(singleton, {
+        singletonScriptRef: undefined,
+        objectEventScriptRef: scriptRefRecord.objectEventScript,
+      });
     }
   }
 
@@ -195,7 +214,6 @@ export async function buildSpend(
     utxos,
     refMap,
   );
-
 
   const signedTx = await factory.signTx(completeTx);
 
@@ -222,7 +240,9 @@ async function getWalletUtxosWithRetry(
       walletUtxos = await winterEvent.getWalletUtxos();
 
       if (includeMempool) {
-        const addresses = [...new Set(walletUtxos.map((utxo) => utxo.output.address))];
+        const addresses = [
+          ...new Set(walletUtxos.map((utxo) => utxo.output.address)),
+        ];
         finalUtxos = await utxoService.getAllUtxos(walletUtxos, addresses);
       } else {
         finalUtxos = await utxoService.getNonMempoolUtxos(walletUtxos);

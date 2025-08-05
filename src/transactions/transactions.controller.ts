@@ -7,7 +7,11 @@ import {
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { Transaction } from './entities/transaction.entity';
-import { ApiBadRequestResponse, ApiCreatedResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCreatedResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ErrorResponse } from '../palmyra/dto/error.dto';
 
 @ApiTags('Transactions')
@@ -51,10 +55,7 @@ export class TransactionsController {
       return res;
     }
     if (res === null) {
-      throw new HttpException(
-        'Transaction not found',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Transaction not found', HttpStatus.NOT_FOUND);
     }
     return [res];
   }

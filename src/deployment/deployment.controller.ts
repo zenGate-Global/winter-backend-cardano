@@ -1,5 +1,19 @@
-import { Controller, Get, Param, Post, Body, NotFoundException, Put } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Body,
+  NotFoundException,
+  Put,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiBody,
+} from '@nestjs/swagger';
 import { DeploymentService } from './deployment.service';
 import { Deployment } from './entities/deployment.entity';
 import { DeploymentResponseDto } from './dto/deployment-response.dto';
@@ -11,7 +25,11 @@ export class DeploymentController {
 
   @Get()
   @ApiOperation({ summary: 'Get all deployments' })
-  @ApiResponse({ status: 200, description: 'List of all deployments', type: [Deployment] })
+  @ApiResponse({
+    status: 200,
+    description: 'List of all deployments',
+    type: [Deployment],
+  })
   async getAllDeployments(): Promise<Deployment[]> {
     return this.deploymentService.getAllDeployments();
   }
@@ -19,11 +37,20 @@ export class DeploymentController {
   @Get(':contractAddress')
   @ApiOperation({ summary: 'Get deployment by contract address' })
   @ApiParam({ name: 'contractAddress', description: 'The contract address' })
-  @ApiResponse({ status: 200, description: 'Deployment found', type: DeploymentResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Deployment found',
+    type: DeploymentResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Deployment not found' })
-  async getDeploymentByContractAddress(@Param('contractAddress') contractAddress: string): Promise<DeploymentResponseDto> {
-    const deployment = await this.deploymentService.getDeploymentByContractAddress(contractAddress);
-    
+  async getDeploymentByContractAddress(
+    @Param('contractAddress') contractAddress: string,
+  ): Promise<DeploymentResponseDto> {
+    const deployment =
+      await this.deploymentService.getDeploymentByContractAddress(
+        contractAddress,
+      );
+
     return {
       contractAddress: deployment.contractAddress,
       deployAddress: deployment.deployAddress,
@@ -40,8 +67,8 @@ export class DeploymentController {
   // @Get(':contractAddress/utxo')
   // @ApiOperation({ summary: 'Get UTXO reference for deployment by contract address' })
   // @ApiParam({ name: 'contractAddress', description: 'The contract address' })
-  // @ApiResponse({ 
-  //   status: 200, 
+  // @ApiResponse({
+  //   status: 200,
   //   description: 'UTXO reference for the deployment',
   //   schema: {
   //     type: 'object',
@@ -71,7 +98,7 @@ export class DeploymentController {
   // @ApiResponse({ status: 201, description: 'Deployment created', type: DeploymentResponseDto })
   // async createDeployment(@Body() createDeploymentDto: CreateDeploymentDto): Promise<DeploymentResponseDto> {
   //   const deployment = await this.deploymentService.saveDeployment(createDeploymentDto);
-    
+
   //   return {
   //     contractAddress: deployment.contractAddress,
   //     deployAddress: deployment.deployAddress,
@@ -93,7 +120,7 @@ export class DeploymentController {
   // @ApiResponse({ status: 404, description: 'Deployment not found' })
   // async updateDeployment(@Param('contractAddress') contractAddress: string, @Body() updateData: Partial<CreateDeploymentDto>): Promise<DeploymentResponseDto> {
   //   const deployment = await this.deploymentService.updateDeploymentByContractAddress(contractAddress, updateData);
-    
+
   //   return {
   //     contractAddress: deployment.contractAddress,
   //     deployAddress: deployment.deployAddress,

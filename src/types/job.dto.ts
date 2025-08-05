@@ -1,12 +1,18 @@
 export interface spendCommodity {
   utxos: UtxoQuery[];
-  utxoRef: Record<string, {singletonScript: UtxoQuery | undefined, objectEventScript: UtxoQuery}>;
+  utxoRef: Record<
+    string,
+    { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+  >;
 }
 
 export interface spendCommodityJob {
   id: string;
   utxos: UtxoQuery[];
-  utxoRef: Record<string, {singletonScript: UtxoQuery | undefined, objectEventScript: UtxoQuery}>;
+  utxoRef: Record<
+    string,
+    { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+  >;
 }
 
 export interface tokenizeCommodity {
@@ -51,14 +57,20 @@ export interface tokenizeAndDeployRefCommodityJob {
 export interface recreateCommodity {
   utxos: UtxoQuery[];
   newDataReferences: string[];
-  utxoRef: Record<string, {singletonScript: UtxoQuery | undefined, objectEventScript: UtxoQuery}>;
+  utxoRef: Record<
+    string,
+    { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+  >;
 }
 
 export interface recreateCommodityJob {
   id: string;
   utxos: UtxoQuery[];
   newDataReferences: string[];
-  utxoRef: Record<string, {singletonScript: UtxoQuery | undefined, objectEventScript: UtxoQuery}>;
+  utxoRef: Record<
+    string,
+    { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+  >;
 }
 
 export interface UtxoQuery {

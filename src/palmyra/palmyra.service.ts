@@ -68,23 +68,27 @@ export class PalmyraService {
     }
   }
   async dispatchSpendCommodity(jobArguments: spendCommodityJob) {
-    try {   
-      const utxoPromises = jobArguments.utxos.map(utxo => 
-        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex)
+    try {
+      const utxoPromises = jobArguments.utxos.map((utxo) =>
+        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
       );
-      
+
       const fetchedUtxos = await Promise.all(utxoPromises);
-      
+
       const contractAddresses = fetchedUtxos.map((utxoArray) => {
         const utxo = utxoArray?.[0];
         return utxo.output.address;
       });
-      
-      const utxoRef: Record<string, {singletonScript: UtxoQuery | undefined, objectEventScript: UtxoQuery}> = {};
+
+      const utxoRef: Record<
+        string,
+        { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+      > = {};
 
       for (const cA of contractAddresses) {
         try {
-          const deployment = await this.deploymentService.getDeploymentByContractAddress(cA);
+          const deployment =
+            await this.deploymentService.getDeploymentByContractAddress(cA);
           utxoRef[cA] = {
             singletonScript: undefined,
             objectEventScript: {
@@ -93,7 +97,9 @@ export class PalmyraService {
             },
           };
         } catch (error) {
-          this.logger.warn(`Deployment not found for contract address ${cA}: ${error}`);
+          this.logger.warn(
+            `Deployment not found for contract address ${cA}: ${error}`,
+          );
         }
       }
 
@@ -139,23 +145,26 @@ export class PalmyraService {
 
   async dispatchRecreateCommodity(jobArguments: recreateCommodityJob) {
     try {
-
-      const utxoPromises = jobArguments.utxos.map(utxo => 
-        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex)
+      const utxoPromises = jobArguments.utxos.map((utxo) =>
+        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
       );
-      
+
       const fetchedUtxos = await Promise.all(utxoPromises);
-      
+
       const contractAddresses = fetchedUtxos.map((utxoArray) => {
         const utxo = utxoArray?.[0];
         return utxo.output.address;
       });
-      
-      const utxoRef: Record<string, {singletonScript: UtxoQuery | undefined, objectEventScript: UtxoQuery}> = {};
+
+      const utxoRef: Record<
+        string,
+        { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+      > = {};
 
       for (const cA of contractAddresses) {
         try {
-          const deployment = await this.deploymentService.getDeploymentByContractAddress(cA);
+          const deployment =
+            await this.deploymentService.getDeploymentByContractAddress(cA);
           utxoRef[cA] = {
             singletonScript: undefined,
             objectEventScript: {
@@ -164,12 +173,18 @@ export class PalmyraService {
             },
           };
         } catch (error) {
-          this.logger.warn(`Deployment not found for contract address ${cA}: ${error}`);
+          this.logger.warn(
+            `Deployment not found for contract address ${cA}: ${error}`,
+          );
         }
       }
 
       const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
-      await buildRecreate(this.factory, { data: jobArgumentsWithUtxoRef }, false);
+      await buildRecreate(
+        this.factory,
+        { data: jobArgumentsWithUtxoRef },
+        false,
+      );
       await this.queue.add('recreate-commodity', jobArgumentsWithUtxoRef);
       await this.checkDb.create({
         id: jobArgumentsWithUtxoRef.id,

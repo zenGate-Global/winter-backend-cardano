@@ -91,8 +91,8 @@ const UOMCodes = [
   'PAL',
   'SEC',
   'VLT',
-  'WTT'
-]
+  'WTT',
+];
 class LocationID {
   @IsNotEmpty()
   @IsString()
@@ -106,7 +106,7 @@ type BusinessTransactionTypeID = string;
 type EPCClass = string;
 type SourceDestTypeID = string;
 type PartyID = string;
-type SourceDestID = PartyID
+type SourceDestID = PartyID;
 type ErrorReasonID = string;
 type SensorPropertyTypeID = string;
 type MircroorganismID = string;
@@ -352,7 +352,6 @@ type ILMD = Record<string, string>;
 type TransformationID = string;
 
 export class Event {
-
   //@IsNotEmpty()
   @IsOptional()
   @IsString()

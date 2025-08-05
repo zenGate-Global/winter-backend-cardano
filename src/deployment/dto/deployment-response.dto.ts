@@ -34,9 +34,10 @@ export class DeploymentResponseDto {
   @ApiProperty({
     description: 'Complete UTXO reference for the deployment',
     example: {
-      txHash: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9',
-      outputIndex: 0
-    }
+      txHash:
+        'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9',
+      outputIndex: 0,
+    },
   })
   utxoReference: {
     txHash: string;
