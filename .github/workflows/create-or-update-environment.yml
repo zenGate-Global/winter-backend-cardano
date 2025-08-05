@@ -161,6 +161,7 @@ jobs:
             --set-env-vars "POSTGRES_PORT=${{ vars.DB_PORT }}" \
             --set-env-vars "POSTGRES_USER=${{ vars.DB_USER }}" \
             --set-secrets  "POSTGRES_PASSWORD=${{ env.GCP_DB_PASSWORD_SECRET_NAME }}:latest" \
+            --set-secrets  "DEPLOYER_ADDRESS=WP_DEPLOYER_ADDRESS:latest" \
             --set-env-vars "POSTGRES_SYNC=true" \
             --set-env-vars "POSTGRES_LOGGING=true" \
             --labels "env_short_name=${{ env.SHORT_NAME }}"
