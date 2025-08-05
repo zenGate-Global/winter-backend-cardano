@@ -72,6 +72,7 @@ export class PalmyraController {
     await this.palmyraService.dispatchSpendCommodity({
       id,
       utxos: message.utxos,
+      utxoRef: {},
     });
     return { message: 'success', id };
   }
@@ -118,11 +119,16 @@ export class PalmyraController {
       );
     }
     const id = uuidv4();
-    await this.palmyraService.dispatchRecreateCommodity({
-      id,
-      utxos: message.utxos,
-      newDataReferences: message.newDataReferences,
-    });
-    return { message: 'success', id };
+    try {
+      await this.palmyraService.dispatchRecreateCommodity({
+        id,
+        utxos: message.utxos,
+        newDataReferences: message.newDataReferences,
+        utxoRef: {},
+      });
+      return { message: 'success', id };
+    } catch (error) {
+      throw error;
+    }
   }
 }

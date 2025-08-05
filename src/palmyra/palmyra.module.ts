@@ -9,6 +9,8 @@ import { Transaction } from '../transactions/entities/transaction.entity';
 import { ConfigService } from '@nestjs/config';
 import { Check } from '../check/entities/check.entity';
 import { CheckService } from '../check/check.service';
+import { DeploymentService } from '../deployment/deployment.service';
+import { Deployment } from '../deployment/entities/deployment.entity';
 
 @Module({
   imports: [
@@ -24,7 +26,7 @@ import { CheckService } from '../check/check.service';
     BullModule.registerQueue({
       name: 'tx-queue',
     }),
-    TypeOrmModule.forFeature([Check, Transaction]),
+    TypeOrmModule.forFeature([Check, Transaction, Deployment]),
   ],
   controllers: [PalmyraController],
   providers: [
@@ -32,6 +34,7 @@ import { CheckService } from '../check/check.service';
     PalmyraConsumerService,
     TransactionsService,
     CheckService,
+    DeploymentService,
   ],
 })
 export class PalmyraModule {}

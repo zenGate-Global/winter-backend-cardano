@@ -5,6 +5,7 @@ import {
   recreateCommodityJob,
   spendCommodityJob,
   tokenizeCommodityJob,
+  UtxoQuery,
 } from '../types/job.dto.js';
 import { BlockfrostProvider } from '@meshsdk/core';
 import { buildMint, buildRecreate, buildSpend } from './palmyra.builder.js';
@@ -13,6 +14,7 @@ import { CheckService } from '../check/check.service.js';
 import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
 import { CheckStatus, CheckType } from '../check/entities/check.entity.js';
 import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
+import { DeploymentService } from '../deployment/deployment.service.js';
 
 @Injectable()
 export class PalmyraService {
@@ -23,6 +25,7 @@ export class PalmyraService {
     @InjectQueue('tx-queue') private queue: Queue,
     private configService: ConfigService,
     private readonly checkDb: CheckService,
+    private readonly deploymentService: DeploymentService,
   ) {
     this.provider = new BlockfrostProvider(
       this.configService.get('BLOCKFROST_KEY') as string,
@@ -65,11 +68,41 @@ export class PalmyraService {
     }
   }
   async dispatchSpendCommodity(jobArguments: spendCommodityJob) {
-    try {
-      await buildSpend(this.factory, { data: jobArguments }, false);
-      await this.queue.add('spend-commodity', jobArguments);
+    try {   
+      const utxoPromises = jobArguments.utxos.map(utxo => 
+        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex)
+      );
+      
+      const fetchedUtxos = await Promise.all(utxoPromises);
+      
+      const contractAddresses = fetchedUtxos.map((utxoArray) => {
+        const utxo = utxoArray?.[0];
+        return utxo.output.address;
+      });
+      
+      const utxoRef: Record<string, {singletonScript: UtxoQuery | undefined, objectEventScript: UtxoQuery}> = {};
+
+      for (const cA of contractAddresses) {
+        try {
+          const deployment = await this.deploymentService.getDeploymentByContractAddress(cA);
+          utxoRef[cA] = {
+            singletonScript: undefined,
+            objectEventScript: {
+              txHash: deployment.deploymentTxHash,
+              outputIndex: deployment.deploymentOutputIndex,
+            },
+          };
+        } catch (error) {
+          this.logger.warn(`Deployment not found for contract address ${cA}: ${error}`);
+        }
+      }
+
+      const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
+
+      await buildSpend(this.factory, { data: jobArgumentsWithUtxoRef }, false);
+      await this.queue.add('spend-commodity', jobArgumentsWithUtxoRef);
       await this.checkDb.create({
-        id: jobArguments.id,
+        id: jobArgumentsWithUtxoRef.id,
         type: CheckType.SPEND,
         status: CheckStatus.PENDING,
       });
@@ -77,7 +110,7 @@ export class PalmyraService {
       this.logger.error(error);
       throw new BadRequestException('Spend Tx Failed', {
         cause: error,
-        description: JSON.stringify(error),
+        description: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -99,29 +132,60 @@ export class PalmyraService {
       this.logger.error(error);
       throw new BadRequestException('Mint Tx Failed', {
         cause: error,
-        description: JSON.stringify(error),
+        description: error instanceof Error ? error.message : String(error),
       });
     }
   }
 
   async dispatchRecreateCommodity(jobArguments: recreateCommodityJob) {
     try {
-      await buildRecreate(this.factory, { data: jobArguments }, false);
-      await this.queue.add('recreate-commodity', jobArguments);
+
+      const utxoPromises = jobArguments.utxos.map(utxo => 
+        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex)
+      );
+      
+      const fetchedUtxos = await Promise.all(utxoPromises);
+      
+      const contractAddresses = fetchedUtxos.map((utxoArray) => {
+        const utxo = utxoArray?.[0];
+        return utxo.output.address;
+      });
+      
+      const utxoRef: Record<string, {singletonScript: UtxoQuery | undefined, objectEventScript: UtxoQuery}> = {};
+
+      for (const cA of contractAddresses) {
+        try {
+          const deployment = await this.deploymentService.getDeploymentByContractAddress(cA);
+          utxoRef[cA] = {
+            singletonScript: undefined,
+            objectEventScript: {
+              txHash: deployment.deploymentTxHash,
+              outputIndex: deployment.deploymentOutputIndex,
+            },
+          };
+        } catch (error) {
+          this.logger.warn(`Deployment not found for contract address ${cA}: ${error}`);
+        }
+      }
+
+      const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
+      await buildRecreate(this.factory, { data: jobArgumentsWithUtxoRef }, false);
+      await this.queue.add('recreate-commodity', jobArgumentsWithUtxoRef);
       await this.checkDb.create({
-        id: jobArguments.id,
+        id: jobArgumentsWithUtxoRef.id,
         type: CheckType.RECREATE,
         status: CheckStatus.PENDING,
         additionalInfo: {
-          utxos: jobArguments.utxos,
-          newDataReferences: jobArguments.newDataReferences,
+          utxos: jobArgumentsWithUtxoRef.utxos,
+          newDataReferences: jobArgumentsWithUtxoRef.newDataReferences,
+          utxoRef: jobArgumentsWithUtxoRef.utxoRef,
         },
       });
     } catch (error) {
       this.logger.error(error);
       throw new BadRequestException('Recreate Tx Failed', {
         cause: error,
-        description: JSON.stringify(error),
+        description: error instanceof Error ? error.message : String(error),
       });
     }
   }
