@@ -8,6 +8,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { LoggerModule } from 'nestjs-pino';
 import { CheckModule } from './check/check.module';
 import { IpfsModule } from './ipfs/ipfs.module';
+import { DeploymentModule } from './deployment/deployment.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { IpfsModule } from './ipfs/ipfs.module';
     DatabaseModule,
     TransactionsModule,
     CheckModule,
+    DeploymentModule,
     LoggerModule.forRoot({
       pinoHttp: {
         customProps: (req, res) => ({
