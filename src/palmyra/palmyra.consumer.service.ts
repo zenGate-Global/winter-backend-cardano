@@ -21,7 +21,11 @@ import { CheckService } from '../check/check.service';
 import { CheckStatus } from 'src/check/entities/check.entity';
 import { DeploymentService } from '../deployment/deployment.service';
 import { EventFactory } from '@zengate/winter-cardano-mesh';
-import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
+import {
+  NETWORK,
+  ZENGATE_MNEMONIC,
+  TRANSACTION_RETRY_ATTEMPTS,
+} from 'src/constants';
 
 /* eslint-disable  @typescript-eslint/no-non-null-assertion */
 
@@ -47,6 +51,102 @@ export class PalmyraConsumerService {
       this.provider,
       this.provider,
     );
+  }
+
+  private shouldRetryTransaction(hash: unknown): boolean {
+    if (typeof hash !== 'string') {
+      return true;
+    }
+
+    if (hash.toLowerCase().includes('bad request')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private async retryBuildTransaction<T>(
+    buildFunction: () => Promise<T>,
+    maxAttempts: number = TRANSACTION_RETRY_ATTEMPTS(),
+  ): Promise<T> {
+    let lastError: Error | undefined;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const result = await buildFunction();
+
+        if (typeof result === 'string' && this.shouldRetryTransaction(result)) {
+          this.logger.warn(
+            `Attempt ${attempt}/${maxAttempts}: Invalid hash received: ${result}. Retrying...`,
+          );
+          if (attempt === maxAttempts) {
+            throw new Error(
+              `Transaction failed after ${maxAttempts} attempts. Last result: ${result}`,
+            );
+          }
+          continue;
+        }
+
+        if (
+          typeof result === 'object' &&
+          result !== null &&
+          'mintTxHash' in result
+        ) {
+          const mintResult = result as any;
+          if (this.shouldRetryTransaction(mintResult.mintTxHash)) {
+            this.logger.warn(
+              `Attempt ${attempt}/${maxAttempts}: Invalid mint hash received: ${mintResult.mintTxHash}. Retrying...`,
+            );
+            if (attempt === maxAttempts) {
+              throw new Error(
+                `Transaction failed after ${maxAttempts} attempts. Last result: ${mintResult.mintTxHash}`,
+              );
+            }
+            continue;
+          }
+        }
+
+        if (
+          typeof result === 'object' &&
+          result !== null &&
+          'deploymentTxHash' in result
+        ) {
+          const deployResult = result as any;
+          if (this.shouldRetryTransaction(deployResult.deploymentTxHash)) {
+            this.logger.warn(
+              `Attempt ${attempt}/${maxAttempts}: Invalid deployment hash received: ${deployResult.deploymentTxHash}. Retrying...`,
+            );
+            if (attempt === maxAttempts) {
+              throw new Error(
+                `Transaction failed after ${maxAttempts} attempts. Last result: ${deployResult.deploymentTxHash}`,
+              );
+            }
+            continue;
+          }
+        }
+
+        if (attempt > 1) {
+          this.logger.log(
+            `Transaction succeeded on attempt ${attempt}/${maxAttempts}`,
+          );
+        }
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        this.logger.warn(
+          `Attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`,
+        );
+
+        if (attempt === maxAttempts) {
+          throw lastError;
+        }
+
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError || new Error('Unknown error occurred during retry');
   }
 
   @Process({ name: '*', concurrency: 1 })
@@ -88,10 +188,9 @@ export class PalmyraConsumerService {
         tokenName,
         singleton,
         contractAddress,
-      } = (await buildMint(this.factory, job, true))!;
-      if (typeof txid !== 'string') {
-        throw new Error(txid);
-      }
+      } = (await this.retryBuildTransaction(() =>
+        buildMint(this.factory, job, true),
+      ))!;
       this.logger.log(
         `Mint successful with singleton: ${singleton} at txid: ${txid}`,
       );
@@ -113,18 +212,9 @@ export class PalmyraConsumerService {
             },
           };
 
-          const deploymentResult = (await buildDeployRef(
-            this.factory,
-            { data: deployJob },
-            true,
+          const deploymentResult = (await this.retryBuildTransaction(() =>
+            buildDeployRef(this.factory, { data: deployJob }, true),
           ))!;
-
-          if (
-            !deploymentResult ||
-            typeof deploymentResult.deploymentTxHash !== 'string'
-          ) {
-            throw new Error('Invalid deployment result');
-          }
 
           this.logger.log(
             `Deployment successful: ${deploymentResult.deploymentTxHash} at output index ${deploymentResult.deploymentOutputIndex}`,
@@ -161,10 +251,9 @@ export class PalmyraConsumerService {
 
   async recreateCommodity(job: Job<recreateCommodityJob>): Promise<void> {
     try {
-      const hash = (await buildRecreate(this.factory, job, true)) as string;
-      if (typeof hash !== 'string') {
-        throw new Error(hash);
-      }
+      const hash = (await this.retryBuildTransaction(() =>
+        buildRecreate(this.factory, job, true),
+      )) as string;
       await this.checkDb.update(job.data.id, {
         status: CheckStatus.SUCCESS,
         txid: hash,
@@ -189,10 +278,9 @@ export class PalmyraConsumerService {
 
   async spendCommodity(job: Job<spendCommodityJob>): Promise<void> {
     try {
-      const hash = (await buildSpend(this.factory, job, true)) as string;
-      if (typeof hash !== 'string') {
-        throw new Error(hash);
-      }
+      const hash = (await this.retryBuildTransaction(() =>
+        buildSpend(this.factory, job, true),
+      )) as string;
       await this.checkDb.update(job.data.id, {
         status: CheckStatus.SUCCESS,
         txid: hash,

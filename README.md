@@ -20,6 +20,7 @@ To see the OpenAPI sepcification, along with other usage details and example, pl
 ## Important Environment Variables
 - The `NETWORK` can be one of `mainnet` | `preview` | `preprod`.
 - The `BLOCKFROST_KEY` should be configured depending on the value used for `NETWORK`.
+- The `TRANSACTION_RETRY_ATTEMPTS` (optional, default: 3) configures how many times to retry failed transactions when invalid hashes are received.
 
 ## Basic Usage Guideline
 In order to submit data to IPFS and then mint an NFT on the Cardano blockchain serving as a reference to the data, you should make the following API calls:
@@ -29,6 +30,21 @@ In order to submit data to IPFS and then mint an NFT on the Cardano blockchain s
 `POST /palmyra/tokenizeCommodity`: Here you include the IPFS CID and token name in the body. Note that the token name can only be 32 bytes long. The response will include a job id, which can be used to check that status of the job in the queue.
 
 `GET /check/:id`: Include the job id as a query parameter to get the status of the job. If there is a `SUCCESS` status, then the response will also contain a valid Cardano transaction id, which can be used to look up the transaction on the explorer corresponding to the Cardano network type used to run the application. Note that the transaction may not appear immediately, since there will be a delay until it is confirmed to be included inside a block.
+
+## Transaction Retry Handling
+The application includes automatic retry logic for transaction building operations. Transactions will be automatically retried when:
+- The transaction hash is not of type `string`
+- The hash value contains "bad request" (case insensitive)
+
+### Configuration
+- Set `TRANSACTION_RETRY_ATTEMPTS` environment variable to configure the number of retry attempts (default: 3)
+- Retries use exponential backoff with a maximum delay of 10 seconds
+- All retry attempts and outcomes are logged for monitoring
+
+### Affected Operations
+- **Tokenize Commodity**: Minting transactions and deployment transactions
+- **Recreate Commodity**: Recreation transactions  
+- **Spend Commodity**: Spend transactions
 
 ## Winter Manual
 To get more in-depth information on how to setup the application and the environment variables, along with how to use the application, please check the following [winter-manual](./docs/WINTER-MANUAL.md).
