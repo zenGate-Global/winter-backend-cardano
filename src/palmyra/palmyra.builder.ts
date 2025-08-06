@@ -51,8 +51,7 @@ export async function buildMint(
     finalUtxos,
     objectDatum,
   );
-  console.log('unsignedTx: ', unsignedTx);
-
+  
   const serializer = new CSLSerializer();
   const txParser = new TxParser(serializer, factory.fetcher as any);
   const txBuilderBody = await txParser.parse(unsignedTx);
@@ -65,7 +64,7 @@ export async function buildMint(
   // to sign there own transactions as well.
   const signedTx = await factory.signTx(unsignedTx);
 
-  logger.debug(`Mint signed tx: ${signedTx}`);
+  logger.log(`Mint signed tx: ${signedTx}`);
 
   if (submit) {
     //return submitTx(signedTx);
@@ -249,7 +248,9 @@ async function getWalletUtxosWithRetry(
       }
 
       const lovelace = utxoService.getTotalLovelace(finalUtxos);
-      if (lovelace >= BigInt(20000000)) {
+      logger.log(`lovelace: ${lovelace}`);
+      logger.log(`finalUtxos length: ${finalUtxos.length}`);
+      if (lovelace >= BigInt(2000000)) {
         break;
       } else {
         attemptCount++;
