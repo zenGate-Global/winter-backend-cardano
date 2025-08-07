@@ -51,7 +51,7 @@ export async function buildMint(
     finalUtxos,
     objectDatum,
   );
-  
+
   const serializer = new CSLSerializer();
   const txParser = new TxParser(serializer, factory.fetcher as any);
   const txBuilderBody = await txParser.parse(unsignedTx);
