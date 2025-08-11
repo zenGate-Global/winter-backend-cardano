@@ -150,9 +150,6 @@ jobs:
             --port 4000 \
             --add-cloudsql-instances $DB_INSTANCE_CONNECTION_NAME \
             --set-env-vars "NETWORK=${{ vars.NETWORK }}" \
-            --set-env-vars "ZENGATE_WALLET_MNEMONIC=${{ secrets.ZENGATE_WALLET_MNEMONIC }}" \
-            --set-env-vars "BLOCKFROST_KEY=${{ vars.BLOCKFROST_KEY }}" \
-            --set-env-vars "PINATA_JWT=${{ vars.PINATA_JWT }}" \
             --set-env-vars "NEXT_PUBLIC_GATEWAY_URL=${{ vars.NEXT_PUBLIC_GATEWAY_URL }}" \
             --set-env-vars "REDIS_HOST=${{ vars.REDIS_IP }}" \
             --set-env-vars "REDIS_PORT=${{ vars.REDIS_PORT }}" \
@@ -160,8 +157,11 @@ jobs:
             --set-env-vars "POSTGRES_HOST=${{ env.DB_HOST }}" \
             --set-env-vars "POSTGRES_PORT=${{ vars.DB_PORT }}" \
             --set-env-vars "POSTGRES_USER=${{ vars.DB_USER }}" \
-            --set-secrets  "POSTGRES_PASSWORD=${{ env.GCP_DB_PASSWORD_SECRET_NAME }}:latest" \
-            --set-secrets  "DEPLOYER_ADDRESS=WP_DEPLOYER_ADDRESS:latest" \
+            --set-secrets "POSTGRES_PASSWORD=${{ env.GCP_DB_PASSWORD_SECRET_NAME }}:latest" \
+            --set-secrets "DEPLOYER_ADDRESS=WP_DEPLOYER_ADDRESS:latest" \
+            --set-secrets "ZENGATE_WALLET_MNEMONIC=ZENGATE_WALLET_MNEMONIC:latest" \
+            --set-secrets "BLOCKFROST_KEY=BLOCKFROST_KEY:latest" \
+            --set-secrets "PINATA_JWT=PINATA_JWT:latest" \
             --set-env-vars "POSTGRES_SYNC=true" \
             --set-env-vars "POSTGRES_LOGGING=true" \
             --labels "env_short_name=${{ env.SHORT_NAME }}"
