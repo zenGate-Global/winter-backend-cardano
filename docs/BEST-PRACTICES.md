@@ -27,7 +27,7 @@ Within zenGate, we are using Google Cloud as our hosting infrastructure for most
 - The deployment instance does not have correct environment variables assigned to it, so certain services will not be initialized properly or fail to communicate with other services.
 
 ### Other Hosting Providers
-The setup process should be similar as for GCP, just make sure that there is access to Redis and a Postgre.
+The setup process should be similar as for GCP, just make sure that there is access to Redis and Postgre.
 
 ## Cost Reduction Techniques
 A basic way to use the protocol is to create a tokenization event for each traceability event that occurs in the physical world. However, due to the minting cost requirements of the Cardano blockchain, it may become too expensive to do so.
