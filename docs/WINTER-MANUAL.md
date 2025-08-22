@@ -24,7 +24,11 @@ We will now explain each variable in the environment file.
 
 `ZENGATE_WALLET_MNEMONIC`: This is the mnemonic to use for paying all the Cardano transaction fees. When wanting to submit transactions to the Cardano blockchain with the running application, make sure this wallet has enough ADA in it. This mnemonic can be created with any valid Cardnao wallet application, e.g. [eternl](https://eternl.io/)
 
+`TRANSACTION_RETRY_ATTEMPTS`: Configures how many times to retry failed transactions when invalid hashes are received. This is an optional variable with default value of 3.
+
 `BLOCKFROST_KEY`: [Blockfrost](https://blockfrost.io) is used for fetching and submitting data on the Cardano blockchain. This API key is necessary for the winter-cardano library. Make an account to obtain a valid API key.
+
+`DEPLOYER_ADDRESS`: The address that holds the reference script utxo/ The reference script utxo is a read-only input, which is added during transaction building so the entire smart-contract does not need to be attached to the transaction. This design pattern enabled a significant reduction in transaction fees, thus it is important that this utxo is never spent.
 
 `PINATA_JWT`: [Pinata]() is used for submitting data to IPFS. Make an account to obtain a valid API key.
 

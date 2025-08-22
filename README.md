@@ -46,8 +46,17 @@ The application includes automatic retry logic for transaction building operatio
 - **Recreate Commodity**: Recreation transactions  
 - **Spend Commodity**: Spend transactions
 
-## Winter Manual
+## Application Setup
+
+### Winter Manual
 To get more in-depth information on how to setup the application and the environment variables, along with how to use the application, please check the following [winter-manual](./docs/WINTER-MANUAL.md).
 
-## Best Practices
+### Best Practices
 To see best practices for deployment of the application and dealing with different types of metadata, please check the following [best-practices](./docs/BEST-PRACTICES.md).
+
+### Integration Guide
+The integration guide explains how the application can be integrated into an existing workflow, please check the following [integration-guide](./docs/INTEGRATION-GUIDE.md).
+
+### Education Material
+The education material highlights the main features the application provides for people wanting to use it, please check the following [educational-material](./docs/EDUCATIONAL-MATERIAL.md)
+
