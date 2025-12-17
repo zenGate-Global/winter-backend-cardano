@@ -1,0 +1,604 @@
+openapi: 3.0.0
+info:
+  title: Winter Backend
+  description: |
+    Winter Backend Cardano API enables blockchain-based traceability using the Cardano network.
+
+    ## Features
+
+    - Upload traceability metadata to IPFS
+    - Tokenize data references on the Cardano blockchain
+    - Update existing tokenized references
+    - Delete (burn) tokenized references
+
+    ## Getting Started
+
+    The API exposes endpoints for interacting with IPFS and the Cardano blockchain, handling all the complexity of transaction building and submission.
+  version: '1.0'
+  contact:
+    name: zenGate Global
+    url: https://zengate.global
+servers:
+  - url: testnet.winter.zengate-dev.com
+    description: Testnet
+tags:
+  - name: IPFS
+    description: Endpoints for uploading metadata to IPFS
+  - name: Blockchain
+    description: Palmyra endpoints for tokenization operations on Cardano
+  - name: Transactions
+    description: Query transaction information
+  - name: Check
+    description: Check job and queue status
+  - name: Deployments
+    description: Deployment management
+paths:
+  /ipfs:
+    post:
+      tags:
+        - IPFS
+      summary: Upload to IPFS
+      description: Upload metadata in EPCIS format to IPFS and receive the CID.
+      operationId: IpfsController_store
+      responses:
+        '201':
+          description: Data uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreIpfsResponseDto'
+        '400':
+          description: Error uploading data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /palmyra/tokenizeCommodity:
+    post:
+      tags:
+        - Blockchain
+      summary: Tokenize Commodity
+      description: Create a new tokenized reference on the Cardano blockchain by minting an NFT with the provided IPFS CID.
+      operationId: PalmyraController_tokenizeCommodity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenizeCommodityDto'
+      responses:
+        '201':
+          description: Tokenization job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenizeCommodityResponseDto'
+        '400':
+          description: Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /palmyra/recreateCommodity:
+    post:
+      tags:
+        - Blockchain
+      summary: Recreate Commodity
+      description: Update an existing tokenized reference with a new IPFS CID while keeping the same NFT identifier.
+      operationId: PalmyraController_recreateCommodity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecreateCommodityDto'
+      responses:
+        '201':
+          description: Recreation job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecreateCommodityResponseDto'
+        '400':
+          description: Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /palmyra/spendCommodity:
+    post:
+      tags:
+        - Blockchain
+      summary: Spend Commodity
+      description: Burn an NFT and delete the on-chain reference by spending the UTxO.
+      operationId: PalmyraController_spendCommodity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpendCommodityDto'
+      responses:
+        '201':
+          description: Spend job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpendCommodityResponseDto'
+        '400':
+          description: Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /palmyra/commodityDetails:
+    post:
+      tags:
+        - Blockchain
+      summary: Commodity Details
+      description: Retrieve datum details for commodities by their token IDs.
+      operationId: PalmyraController_commodityDetails
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommodityDetailsDto'
+      responses:
+        '201':
+          description: Commodity details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommodityDetailsResponseDto'
+        '400':
+          description: Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /transactions:
+    get:
+      tags:
+        - Transactions
+      summary: Get All Transactions
+      description: Returns information about all transactions built and submitted by the application.
+      operationId: TransactionsController_findAll
+      responses:
+        '200':
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+
+  /transactions/{txid}:
+    get:
+      tags:
+        - Transactions
+      summary: Get Transaction by ID
+      description: Returns information about a specific transaction by its transaction ID.
+      operationId: TransactionsController_findOne
+      parameters:
+        - name: txid
+          in: path
+          required: true
+          description: The Cardano transaction ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Invalid transaction ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /check:
+    get:
+      tags:
+        - Check
+      summary: Get All Jobs
+      description: Returns the status of all transactions in the Redis queue.
+      operationId: CheckController_findAll
+      responses:
+        '200':
+          description: List of all jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Check'
+
+  /check/{id}:
+    get:
+      tags:
+        - Check
+      summary: Get Job by ID
+      description: Returns the status of a specific job. If successful, includes the Cardano transaction ID.
+      operationId: CheckController_findOne
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The job UUID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Check'
+
+  /deployments:
+    get:
+      tags:
+        - Deployments
+      summary: Get All Deployments
+      description: List of all deployments.
+      operationId: DeploymentController_getAllDeployments
+      responses:
+        '200':
+          description: List of deployments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Deployment'
+
+  /deployments/{contractAddress}:
+    get:
+      tags:
+        - Deployments
+      summary: Get Deployment by Contract Address
+      description: Get deployment details by contract address.
+      operationId: DeploymentController_getDeploymentByContractAddress
+      parameters:
+        - name: contractAddress
+          in: path
+          required: true
+          description: The contract address
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deployment found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponseDto'
+        '404':
+          description: Deployment not found
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - message
+        - cause
+      properties:
+        message:
+          type: string
+          example: 'Koios API Error'
+          description: The error message indicating the general error category
+        cause:
+          type: string
+          example: 'id not found'
+          description: The specific error message thrown
+
+    StoreIpfsResponseDto:
+      type: object
+      required:
+        - hash
+      properties:
+        hash:
+          type: string
+          description: IPFS CID
+          example: 'bafkreifzjut3te2nhyekklss27nh3k72ysco7y32koao5eei66wof36n5e'
+
+    TokenizeCommodityDto:
+      type: object
+      required:
+        - tokenName
+        - metadataReference
+      properties:
+        tokenName:
+          type: string
+          description: Token name (UTF-8 string, max 32 bytes)
+          example: 'coffee tracking singleton'
+        metadataReference:
+          type: string
+          description: IPFS URI for the metadata
+          example: 'ipfs://bafkreihfxojbr7gvaukph2jaxeoc4n25lut4s6tepfnnouwlxwc74uyhaa'
+
+    TokenizeCommodityResponseDto:
+      type: object
+      required:
+        - message
+        - id
+      properties:
+        message:
+          type: string
+          example: 'success'
+        id:
+          type: string
+          description: Job UUID for tracking
+          example: '2dc32cfe-cc0f-45cd-991c-7d68b2476e1a'
+
+    UtxoDto:
+      type: object
+      required:
+        - txHash
+        - outputIndex
+      properties:
+        txHash:
+          type: string
+          description: Transaction hash of the UTxO
+          example: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9'
+        outputIndex:
+          type: number
+          description: Output index of the UTxO
+          example: 0
+
+    RecreateCommodityDto:
+      type: object
+      required:
+        - utxos
+        - newDataReferences
+      properties:
+        utxos:
+          type: array
+          description: Array of UTxOs to recreate
+          items:
+            $ref: '#/components/schemas/UtxoDto'
+        newDataReferences:
+          type: array
+          description: New IPFS references (one per UTxO)
+          items:
+            type: string
+          example:
+            - 'ipfs://someotherhash'
+
+    RecreateCommodityResponseDto:
+      type: object
+      required:
+        - message
+        - id
+      properties:
+        message:
+          type: string
+          example: 'success'
+        id:
+          type: string
+          description: Job UUID for tracking
+          example: '2dc32cfe-cc0f-45cd-991c-7d68b2476e1a'
+
+    SpendCommodityDto:
+      type: object
+      required:
+        - utxos
+      properties:
+        utxos:
+          type: array
+          description: Array of UTxOs to spend
+          items:
+            $ref: '#/components/schemas/UtxoDto'
+
+    SpendCommodityResponseDto:
+      type: object
+      required:
+        - message
+        - id
+      properties:
+        message:
+          type: string
+          example: 'success'
+        id:
+          type: string
+          description: Job UUID for tracking
+          example: '2dc32cfe-cc0f-45cd-991c-7d68b2476e1a'
+
+    CommodityDetailsDto:
+      type: object
+      required:
+        - tokenIds
+      properties:
+        tokenIds:
+          type: array
+          description: Token IDs (policyId + hex token name)
+          items:
+            type: string
+          example:
+            - '802ad2b341d95e0f55fd02bf364f3fa28aae08abb3e304160e76e808617065'
+
+    ObjectDatum:
+      type: object
+      required:
+        - protocol_version
+        - data_reference
+        - event_creation_info
+        - signers
+      properties:
+        protocol_version:
+          type: number
+          description: Protocol version
+          example: 1
+        data_reference:
+          type: string
+          description: IPFS data reference (hex encoded)
+          example: '697066733a2f2f516d4e4c6f657a62586b6b33376d314458356959414452777071765a3379667535556a4d4736736e647531416151'
+        event_creation_info:
+          type: string
+          description: Transaction ID of first event (empty if no events)
+          example: ''
+        signers:
+          type: array
+          description: Required signers for further interactions
+          items:
+            type: string
+          example:
+            - '5afc8364f8733c895f54b5cf261b5efe71d3669f59ccad7439ccf289'
+
+    CommodityDetailsResponseDto:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: array
+          description: Array of commodity datum objects
+          items:
+            $ref: '#/components/schemas/ObjectDatum'
+
+    Transaction:
+      type: object
+      required:
+        - txid
+        - recreated
+        - spent
+      properties:
+        txid:
+          type: string
+          description: Cardano transaction ID
+          example: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9'
+        recreated:
+          type: array
+          description: Recreated UTxO details
+          items:
+            type: string
+          example:
+            - txHash: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9'
+              outputIndex: 1
+        spent:
+          type: string
+          description: Spent transaction ID
+          example: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9'
+
+    Check:
+      type: object
+      required:
+        - id
+        - type
+        - status
+        - error
+        - txid
+        - additionalInfo
+      properties:
+        id:
+          type: string
+          description: Job UUID
+          example: '2dc32cfe-cc0f-45cd-991c-7d68b2476e1a'
+        type:
+          type: string
+          description: Job type
+          enum:
+            - SPEND
+            - TOKENIZE
+            - RECREATE
+          example: 'RECREATE'
+        status:
+          type: string
+          description: Job status
+          enum:
+            - SUCCESS
+            - QUEUED
+            - ERROR
+            - PENDING
+          example: 'SUCCESS'
+        error:
+          type: string
+          description: Error message if any
+          example: null
+        txid:
+          type: string
+          description: Cardano transaction ID (when successful)
+          example: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9'
+        additionalInfo:
+          description: Additional info for tokenize/recreate jobs
+          oneOf:
+            - $ref: '#/components/schemas/TokenizeCommodityDto'
+            - $ref: '#/components/schemas/RecreateCommodityDto'
+
+    Deployment:
+      type: object
+      required:
+        - contractAddress
+        - deployAddress
+        - deploymentTxHash
+        - deploymentOutputIndex
+        - createdAt
+      properties:
+        contractAddress:
+          type: string
+          description: Contract address (primary identifier)
+          example: 'addr1contractaddressexample123456789'
+        deployAddress:
+          type: string
+          description: Deployment address
+          example: 'addr1deploymentaddressexample123456789'
+        deploymentTxHash:
+          type: string
+          description: Deployment transaction hash
+          example: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9'
+        deploymentOutputIndex:
+          type: number
+          description: Deployment output index
+          example: 0
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: '2024-01-15T10:30:00Z'
+
+    DeploymentResponseDto:
+      type: object
+      required:
+        - contractAddress
+        - deployAddress
+        - deploymentTxHash
+        - deploymentOutputIndex
+        - createdAt
+        - utxoReference
+      properties:
+        contractAddress:
+          type: string
+          example: 'addr1contractaddressexample123456789'
+        deployAddress:
+          type: string
+          example: 'addr1deploymentaddressexample123456789'
+        deploymentTxHash:
+          type: string
+          example: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9'
+        deploymentOutputIndex:
+          type: number
+          example: 0
+        createdAt:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00Z'
+        utxoReference:
+          type: object
+          description: Complete UTxO reference
+          example:
+            txHash: 'cb52c73335b6495e1662747a6a69c335e5341eaf391086b192650564658ce4b9'
+            outputIndex: 0

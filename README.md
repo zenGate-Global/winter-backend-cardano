@@ -48,15 +48,25 @@ The application includes automatic retry logic for transaction building operatio
 
 ## Application Setup
 
-### Winter Manual
-To get more in-depth information on how to setup the application and the environment variables, along with how to use the application, please check the following [winter-manual](./docs/WINTER-MANUAL.md).
+### Setup Guide
+To get more in-depth information on how to setup the application and the environment variables, along with how to use the application, please check the following:
+- [Requirements](./docs/versions/v1.0.0/setup/requirements.mdx)
+- [Installation](./docs/versions/v1.0.0/setup/installation.mdx)
+- [Environment File](./docs/versions/v1.0.0/setup/environment.mdx)
+- [Running the Application](./docs/versions/v1.0.0/setup/running.mdx)
+- [Bruno](./docs/versions/v1.0.0/setup/bruno.mdx)
 
-### Best Practices
-To see best practices for deployment of the application and dealing with different types of metadata, please check the following [best-practices](./docs/BEST-PRACTICES.md).
+### Deployment
+To see best practices for deployment of the application and dealing with different types of metadata, please check the following:
+- [Local Deployment](./docs/versions/v1.0.0/deployment/local.mdx)
+- [Google Cloud Deployment](./docs/versions/v1.0.0/deployment/google-cloud.mdx)
+- [Cost Reduction](./docs/versions/v1.0.0/deployment/cost-reduction.mdx)
 
 ### Integration Guide
-The integration guide explains how the application can be integrated into an existing workflow, please check the following [integration-guide](./docs/INTEGRATION-GUIDE.md).
+The integration guide explains how the application can be integrated into an existing workflow, please check the following [staging-vs-production](./docs/versions/v1.0.0/integration/staging-vs-production.mdx).
 
-### Education Material
-The education material highlights the main features the application provides for people wanting to use it, please check the following [educational-material](./docs/EDUCATIONAL-MATERIAL.md)
+### Educational Material
+The educational material highlights the main features the application provides for people wanting to use it, please check the following:
+- [How It Works](./docs/base/educational-material/how-it-works.mdx)
+- [Glossary](./docs/base/educational-material/glossary.mdx)
 

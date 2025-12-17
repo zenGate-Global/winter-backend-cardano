@@ -1,0 +1,18 @@
+---
+title: Local Deployment
+description: "Best practices for local development and testing"
+order: 0
+---
+
+# Local Deployment
+
+This is a document outlining some best-practices for getting the project setup locally or within a hosted environment.
+
+It is important to note that the current version is an MVP/PoC meant to be integrated within another application, and not meant to be used as a standalone service.
+
+## Setup
+
+Local deployment is used for development and testing any changes made.
+
+- It is recommended to use Docker for running the project locally instead of build and running it with npm/yarn/bun.
+- Make sure to provide a valid PORT number as an environment variable for the application to listen to incoming requests.

@@ -1,0 +1,11 @@
+---
+title: Bruno
+description: "Using Bruno for API testing with Winter Backend Cardano"
+order: 2
+---
+
+# Bruno
+
+Once the application is started succesfully, you can use Bruno to submit API requests to the exposed endpoints, prefixed with: `http://localhost:PORT`, where `PORT` is the value assigned to the same environment variable in the `.env` file.
+
+If you are using Bruno, make sure to select the `local` environment and assign the `http://localhost:PORT` url to the `winter` variable. There are two other environments for `staging` and `production`, where a valid url to where the application is being hosted should be used instead.
