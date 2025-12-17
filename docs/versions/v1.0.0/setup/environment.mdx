@@ -1,0 +1,45 @@
+---
+title: Environment File
+description: "Configuration of environment variables for Winter Backend Cardano"
+order: 1
+---
+
+# Environment File
+
+Once the repository is cloned locally on your computer, enter its directory and copy `.env.example` to `.env`.
+
+We will now explain each variable in the environment file.
+
+`NETWORK`: This is the Cardano network type to use for application. The valid values are: `mainnet` | `preview` | `preprod`
+
+`ZENGATE_WALLET_MNEMONIC`: This is the mnemonic to use for paying all the Cardano transaction fees. When wanting to submit transactions to the Cardano blockchain with the running application, make sure this wallet has enough ADA in it. This mnemonic can be created with any valid Cardnao wallet application, e.g. [eternl](https://eternl.io/)
+
+`TRANSACTION_RETRY_ATTEMPTS`: Configures how many times to retry failed transactions when invalid hashes are received. This is an optional variable with default value of 3.
+
+`BLOCKFROST_KEY`: [Blockfrost](https://blockfrost.io) is used for fetching and submitting data on the Cardano blockchain. This API key is necessary for the winter-cardano library. Make an account to obtain a valid API key.
+
+`DEPLOYER_ADDRESS`: The address that holds the reference script utxo/ The reference script utxo is a read-only input, which is added during transaction building so the entire smart-contract does not need to be attached to the transaction. This design pattern enabled a significant reduction in transaction fees, thus it is important that this utxo is never spent.
+
+`PINATA_JWT`: [Pinata]() is used for submitting data to IPFS. Make an account to obtain a valid API key.
+
+`NEXT_PUBLIC_GATEWAY_URL`: This is used along with the `PINATA_JWT` to create a PinataSDK object. We need this public gateway url because the data is being made publically available on IPFS.
+
+`POSTGRES_HOST`: The database is used for storing information used by the application as it processes requests for building and submitting transactions to the Cardano blockchain. This value should be left as `db` because we are running the application within a Docker container.
+
+`POSTGRES_PORT`: This should be left as `5432`, there is no need to change this value.
+
+`POSTGRES_DB`: You can set this to the default database as `postgres`.
+
+`POSTGRES_USER`: This can be set to any valid value you want.
+
+`POSTGRES_PASSWORD`: This can be set to any valid value you want.
+
+`POSTGRES_SYNC`: This can be set to `TRUE` | `FALSE`.
+
+`POSTGRES_LOGGING`: This can be set to `TRUE` | `FALSE`.
+
+`REDIS_HOST`: Redis is used as queue for handling the jobs for building and submitting transaction to the Cardano blockchain. This is can be left as `redis`.
+
+`REDIS_PORT`: This can be left as `6379`
+
+`PORT`: A valid port value for where the application will listen to incoming API requests.
