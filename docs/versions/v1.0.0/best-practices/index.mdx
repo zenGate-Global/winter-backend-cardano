@@ -1,0 +1,111 @@
+---
+title: Best Practices
+description: "Security, key management, and operational guidelines for Winter Protocol"
+order: index
+---
+
+# Best Practices
+
+## 1. Security & Key Management
+
+<TypeTable
+  title="Security Guidelines"
+  data={[
+    {
+      name: "Wallet Isolation",
+      type: "Guideline",
+      description: "It is strongly recommended to use a dedicated Cardano wallet (and thus a unique 24-word mnemonic) exclusively for the Winter Backend.",
+      required: true
+    },
+    {
+      name: "API Key Management",
+      type: "Guideline",
+      description: "Restrict API keys (like Maestro or NFT.Storage) with IP whitelisting or other available security features.",
+      required: true
+    }
+  ]}
+/>
+
+## 2. On-Chain Data & Transaction Management
+
+This section focuses on the "blockchain" aspect: cost, permanence, and efficiency.
+
+<TypeTable
+  title="Transaction Guidelines"
+  data={[
+    {
+      name: "Data Immutability",
+      type: "Guideline",
+      description: "Data submitted to the blockchain is permanent. Before creating an event, validate all metadata and parameters in your application layer. The error-declaration event is for correcting logical errors, not for fixing simple typos.",
+      required: true
+    },
+    {
+      name: "Efficient Transaction Batching",
+      type: "Guideline",
+      description: "Whenever possible, batch multiple operations into a single transaction. For example, when using the recreate or spend functions, you can process multiple UTXOs at once.",
+      required: false
+    },
+    {
+      name: "UTXO Management Strategy",
+      type: "Guideline",
+      description: "Your application should be aware of its UTXO state. Avoid creating many small \"dust\" UTXOs. If your application logic allows, periodically consolidate UTXOs into larger ones to simplify management and reduce future transaction sizes (thus less fees).",
+      required: false
+    },
+    {
+      name: "Handling Transaction Confirmations",
+      type: "Guideline",
+      description: "Always use await winterEvent.waitForTx(txHash) or a similar confirmation-checking mechanism before attempting to use the outputs of a transaction you just submitted. Rollbacks are also a possibility, so its best to even wait for a few blocks to pass.",
+      required: true
+    }
+  ]}
+/>
+
+## 3. Backend Deployment & Operations
+
+This is for users running your winter-backend-cardano service.
+
+<TypeTable
+  title="Deployment Guidelines"
+  data={[
+    {
+      name: "Production vs. Development Configuration",
+      type: "Guideline",
+      description: "For production environments, always set POSTGRES_SYNC=false. Only set it to true during initial setup or active development. POSTGRES_SYNC=true can cause destructive changes to your database schema and data if the TypeORM entities are modified.",
+      required: true
+    },
+    {
+      name: "Database & Redis Backups",
+      type: "Guideline",
+      description: "Implement a regular backup strategy for your PostgreSQL database and your Redis instance. Your PostgreSQL data contains a historical record of events, and your Redis data is critical for live UTXO management.",
+      required: true
+    },
+    {
+      name: "Monitoring and Logging",
+      type: "Guideline",
+      description: "Integrate the backend with a logging and monitoring service. Key metrics to watch include: API endpoint error rates (4xx/5xx), transaction submission failures, database query latency, and Redis connectivity.",
+      required: false
+    }
+  ]}
+/>
+
+## 4. Metadata & Off-Chain Storage
+
+This section is about the data before it gets referenced on-chain.
+
+<TypeTable
+  title="Metadata Guidelines"
+  data={[
+    {
+      name: "Metadata Consistency",
+      type: "Guideline",
+      description: "Define and enforce a consistent schema for your metadata within your own application before submitting it. For example, ensure all dates are in ISO 8601 format and that predefined keys (e.g., \"District\", \"Quality\") use a consistent set of values.",
+      required: true
+    },
+    {
+      name: "IPFS Pinning Strategy",
+      type: "Guideline",
+      description: "Understand the data persistence policy of your IPFS provider (e.g., NFT.Storage). For critical, long-term data, consider running your own IPFS node or using a dedicated pinning service to ensure your metadata remains available indefinitely. The blockchain only stores a link (the CID) to the metadata. If the data is no longer available on the IPFS network, that link becomes useless.",
+      required: true
+    }
+  ]}
+/>

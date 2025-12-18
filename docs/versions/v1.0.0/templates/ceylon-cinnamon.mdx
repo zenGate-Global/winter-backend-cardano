@@ -1,0 +1,104 @@
+---
+title: Ceylon Cinnamon
+description: "Example metadata templates for Ceylon Cinnamon supply chain traceability"
+order: 1
+---
+
+# Ceylon Cinnamon
+
+Here are examples of how different event types in the Ceylon Cinnamon supply chain can be represented using the Winter Protocol metadata format.
+
+## Object Event (Harvest Phase)
+
+<CodeTab defaultValue="object">
+  <CodeTabList items={[{ value: "object", title: "metadata.json" }]} />
+  <CodeTabContent
+    value="object"
+    language="json"
+    code={`{
+  "name": "Ceylon Cinnamon",
+  "version": 1.0,
+  "creationDate": "2023-06-01T09:00:00Z",
+  "eventType": "object",
+  "eventId": "",
+  "inputItems": [],
+  "outputItems": [
+    { "itemIdentifier": "<identifier>", "itemQuantity": 100, "unit": null }
+  ],
+  "metadata": [
+    { "key": "Location", "value": "7.2905° N, 80.6337° E", "unit": null },
+    { "key": "District", "value": "Matara", "unit": null },
+    { "key": "Farmer Name", "value": "John Doe", "unit": null },
+    { "key": "Quality", "value": "Grade A", "unit": null },
+    { "key": "Weight", "value": "100", "unit": "kilograms" },
+    { "key": "Harvest Date", "value": "2023-06-01", "unit": "ISO" },
+    { "key": "Batch Number", "value": "CB001", "unit": null }
+  ]
+}`}
+  />
+</CodeTab>
+
+## Transformation Event (Processing Phase)
+
+<CodeTab defaultValue="transformation">
+  <CodeTabList items={[{ value: "transformation", title: "metadata.json" }]} />
+  <CodeTabContent
+    value="transformation"
+    language="json"
+    code={`{
+  "name": "Processed Ceylon Cinnamon",
+  "version": 1.0,
+  "creationDate": "2023-06-03T14:30:00Z",
+  "eventType": "transformation",
+  "eventId": "",
+  "inputItems": [
+    { "itemIdentifier": "<identifier>", "itemEventId": "<tokenId>", "itemQuantity": 100, "unit": "kilograms" }
+  ],
+  "outputItems": [
+    { "itemIdentifier": "<identifier>", "itemQuantity": 95, "unit": "kilograms" }
+  ],
+  "metadata": [
+    { "key": "Business Name", "value": "Ceylon Spices Ltd.", "unit": null },
+    { "key": "Location", "value": "6.9271° N, 79.8612° E", "unit": null },
+    { "key": "District", "value": "Colombo", "unit": null },
+    { "key": "Type", "value": "Cinnamon Quills", "unit": null },
+    { "key": "Quality", "value": "Premium", "unit": null },
+    { "key": "Weight", "value": "95", "unit": "kilograms" },
+    { "key": "Processing Batch Number", "value": "PCB001", "unit": null },
+    { "key": "Processing Date", "value": "2023-06-03", "unit": "ISO" }
+  ]
+}`}
+  />
+</CodeTab>
+
+## Transaction Event
+
+<CodeTab defaultValue="transaction">
+  <CodeTabList items={[{ value: "transaction", title: "metadata.json" }]} />
+  <CodeTabContent
+    value="transaction"
+    language="json"
+    code={`{
+  "name": "Ceylon Cinnamon Sale",
+  "version": 1.0,
+  "creationDate": "2023-06-10T10:00:00Z",
+  "eventType": "transaction",
+  "eventId": "",
+  "inputItems": [
+    { "itemIdentifier": "<identifier>", "itemEventId": "<tokenId>", "itemQuantity": 50, "unit": "kilograms" }
+  ],
+  "outputItems": [
+    { "itemIdentifier": "<identifier>", "itemEventId": "<tokenId>", "unit": "kilograms" }
+  ],
+  "metadata": [
+    { "key": "Buyer", "value": "XYZ Imports", "unit": null },
+    { "key": "Sale Price", "value": "5000", "unit": "USD" },
+    { "key": "Sale Date", "value": "2023-06-10T10:00:00Z", "unit": "ISO 8601" }
+  ]
+}`}
+  />
+</CodeTab>
+
+---
+
+These examples demonstrate how the Winter Protocol metadata format can be used to capture and represent different events in the Ceylon Cinnamon supply chain. The object event represents the harvesting of Ceylon Cinnamon by farmers, capturing relevant details such as location, quality, weight, and batch number. The transformation event represents the processing of the harvested cinnamon into finished products, such as cinnamon quills, by processors. It includes information about the processing facility, quality, weight, and processing details. Finally, the transaction event represents the sale of the processed Ceylon Cinnamon to buyers, including details about the buyer, sale price, and sale date.

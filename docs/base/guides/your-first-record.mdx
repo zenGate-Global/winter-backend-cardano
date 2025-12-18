@@ -1,0 +1,105 @@
+---
+title: Your First Record
+description: "Getting started with tokenizing your first blockchain record"
+order: 2
+---
+
+# Your First Record
+
+Getting Started with Winter Protocol: Tokenizing Your First Blockchain Record
+
+In this guide, we walk you through testing and creating your first blockchain event using Winter Protocol. It's a straightforward process with three key API calls to build and secure records on the blockchain.
+
+<Alert variant="info" title="Preview Network">
+We focus on the preview instance for simplicity. If you're ready to self-host, head over to the Setup section for details.
+</Alert>
+
+Winter Protocol lets you tokenize real-world assets or data securely, leveraging IPFS for storage and Cardano for immutable transactions. It's designed for versatility, whether you're handling commodities, documents, or custom payloads.
+
+<Alert variant="warning" title="Testnet Recommended">
+Use the Preview (testnet) network for learning and development. These records live on the Cardano preview network. For mainnet use or scaling, see the Technical FAQs.
+</Alert>
+
+The core endpoints we use are:
+- `/ipfs` for uploading to IPFS
+- `/palmyra/tokenizeCommodity` for blockchain attachment
+- `/check` for status tracking
+
+<CardList>
+  <CardItem
+    icon="FileJson"
+    iconColor="text-orange-500"
+    title="Bruno"
+    content="Recommended API client for testing"
+    url="https://www.usebruno.com/"
+  />
+  <CardItem
+    icon="Send"
+    iconColor="text-purple-500"
+    title="Postman"
+    content="Alternative API client"
+    url="https://www.postman.com/"
+  />
+  <CardItem
+    icon="Terminal"
+    iconColor="text-blue-500"
+    title="Insomnia"
+    content="Alternative API client"
+    url="https://insomnia.rest/download"
+  />
+</CardList>
+
+## Step 1: Upload Your Payload to IPFS
+
+Start by creating a simple payload to tokenize. Winter Protocol supports any data type, but keep it lightweight for efficiency.
+
+For this example, we tokenize a basic message:
+
+```json
+{
+  "message": "hello world"
+}
+```
+
+Set up a new POST request to the `/ipfs` endpoint. Switch the body to JSON and paste in your payload.
+
+The response should give you an IPFS hash:
+
+```json
+{
+  "hash": "bafkreihznwgtov7pgilkv6lxrycivkxqqa6i7mwjl2rpyzoeqlllqqzqcu"
+}
+```
+
+This hash is your data's permanent address on IPFS.
+
+<Alert variant="info" title="Payload Format">
+JSON is required. Make sure your payload is properly formatted. Use tools like JSON Formatter to verify it.
+</Alert>
+
+## Step 2: Tokenize the Record on the Blockchain
+
+Next, attach that IPFS record to a Cardano blockchain transaction. Use the `/palmyra/tokenizeCommodity` POST endpoint.
+
+Your payload needs a token name and the IPFS reference, prefixed with `ipfs://`:
+
+```json
+{
+  "tokenName": "My first token",
+  "metadataReference": "ipfs://bafkreihznwgtov7pgilkv6lxrycivkxqqa6i7mwjl2rpyzoeqlllqqzqcu"
+}
+```
+
+Send this to the `/palmyra/tokenizeCommodity` endpoint in the body as JSON. The response will include your Winter Protocol ID.
+
+This ID confirms the tokenization request is queued.
+
+## Step 3: Check the Token Status and Verify on Blockchain
+
+Track progress with the `/check` GET endpoint: `/check/{id}`, swapping in your ID.
+
+The response shows status like "queued," "minted," or "failed." Once minted, you can verify on the blockchain.
+
+To verify, use a Cardano Preview explorer like [preview.cardanoscan.io](https://preview.cardanoscan.io). Plug in the transaction hash and confirm your token is live on the blockchain, timestamped forever.
+
+That's it. You've tokenized your first record. Winter Protocol's flexibility means you can adapt this for apps, from asset tracking to data provenance.

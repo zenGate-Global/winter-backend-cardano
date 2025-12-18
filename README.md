@@ -50,10 +50,8 @@ The application includes automatic retry logic for transaction building operatio
 
 ### Setup Guide
 To get more in-depth information on how to setup the application and the environment variables, along with how to use the application, please check the following:
-- [Requirements](./docs/versions/v1.0.0/setup/requirements.mdx)
-- [Installation](./docs/versions/v1.0.0/setup/installation.mdx)
+- [Getting Started](./docs/versions/v1.0.0/setup/getting-started.mdx)
 - [Environment File](./docs/versions/v1.0.0/setup/environment.mdx)
-- [Running the Application](./docs/versions/v1.0.0/setup/running.mdx)
 - [Bruno](./docs/versions/v1.0.0/setup/bruno.mdx)
 
 ### Deployment
@@ -62,11 +60,9 @@ To see best practices for deployment of the application and dealing with differe
 - [Google Cloud Deployment](./docs/versions/v1.0.0/deployment/google-cloud.mdx)
 - [Cost Reduction](./docs/versions/v1.0.0/deployment/cost-reduction.mdx)
 
-### Integration Guide
-The integration guide explains how the application can be integrated into an existing workflow, please check the following [staging-vs-production](./docs/versions/v1.0.0/integration/staging-vs-production.mdx).
-
-### Educational Material
-The educational material highlights the main features the application provides for people wanting to use it, please check the following:
-- [How It Works](./docs/base/educational-material/how-it-works.mdx)
-- [Glossary](./docs/base/educational-material/glossary.mdx)
+### Guides
+The guides highlight the main features the application provides for people wanting to use it, please check the following:
+- [How It Works](./docs/base/guides/how-it-works.mdx)
+- [Glossary](./docs/base/guides/glossary.mdx)
+- [Your First Record](./docs/base/guides/your-first-record.mdx)
 
