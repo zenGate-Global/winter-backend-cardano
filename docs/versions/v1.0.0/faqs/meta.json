@@ -1,9 +1,8 @@
 [
   {
     "type": "category",
-    "icon": "code",
+    "icon": "help-circle",
     "parent": [],
-    "api": true,
-    "order": 0
+    "order": 4
   }
 ]

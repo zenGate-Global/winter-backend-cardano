@@ -19,7 +19,7 @@ info:
     name: zenGate Global
     url: https://zengate.global
 servers:
-  - url: testnet.winter.zengate-dev.com
+  - url: https://testnet.winter.zengate-dev.com
     description: Testnet
 tags:
   - name: IPFS
@@ -40,6 +40,15 @@ paths:
       summary: Upload to IPFS
       description: Upload metadata in EPCIS format to IPFS and receive the CID.
       operationId: IpfsController_store
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Any JSON object to upload to IPFS
+              example:
+                hello: "world"
       responses:
         '201':
           description: Data uploaded successfully
