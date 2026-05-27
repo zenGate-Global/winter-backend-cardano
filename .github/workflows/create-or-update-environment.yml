@@ -1,5 +1,5 @@
 name: Create or Update an environment
-run-name: Create or Update ${{ inputs.shortName || (github.ref_name == 'main' && 'prod') || (github.ref_name == 'dev' && 'dev') || github.ref_name }}
+run-name: Create or Update ${{ inputs.environment || inputs.shortName || (github.ref_name == 'main' && 'prod') || (github.ref_name == 'dev' && 'dev') || github.ref_name }}
 
 on:
 #  pull_request:
