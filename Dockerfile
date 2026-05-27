@@ -2,12 +2,14 @@ FROM node:lts-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+RUN corepack enable
 
-RUN npm install
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-RUN npm run build
+RUN pnpm run build
 
-CMD [ "npm", "run", "start" ]
+CMD [ "pnpm", "run", "start" ]
