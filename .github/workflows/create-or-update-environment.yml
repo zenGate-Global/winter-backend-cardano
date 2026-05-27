@@ -58,6 +58,9 @@ jobs:
           if [[ "${{ inputs.shortName }}" != "" ]]; then
             SHORT_NAME="${{ inputs.shortName }}"
             TAG_NAME="${{ inputs.shortName }}"
+          elif [[ "${{ inputs.environment }}" == "winter-staging" ]]; then
+            SHORT_NAME="staging"
+            TAG_NAME="latest"
           elif [[ "${{ inputs.environment }}" == "winter-production" ]]; then
             SHORT_NAME="prod"
             TAG_NAME="prod"
