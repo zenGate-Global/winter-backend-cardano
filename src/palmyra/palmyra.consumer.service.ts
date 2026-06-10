@@ -157,6 +157,12 @@ export class PalmyraConsumerService {
       case 'spend-commodity':
         await this.performUpdate(job);
         return this.spendCommodity(job.data);
+      default: {
+        const unknownJob = job as unknown as { kind?: unknown };
+        const message = `Unknown tx queue job kind: ${String(unknownJob.kind)}`;
+        this.logger.error(message);
+        throw new Error(message);
+      }
     }
   }
 

@@ -34,9 +34,15 @@ export class CheckService {
 
   async update(id: string, updateCheckDto: UpdateCheckDto) {
     const check = await this.findOne(id);
-    check.status = updateCheckDto.status;
-    check.txid = updateCheckDto.txid ?? 'No tx id.';
-    check.error = updateCheckDto.error ?? 'No error.';
+    if (updateCheckDto.status !== undefined) {
+      check.status = updateCheckDto.status;
+    }
+    if (updateCheckDto.txid !== undefined) {
+      check.txid = updateCheckDto.txid;
+    }
+    if (updateCheckDto.error !== undefined) {
+      check.error = updateCheckDto.error;
+    }
     await this.entityManager.save(check);
   }
 }
