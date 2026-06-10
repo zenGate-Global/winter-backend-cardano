@@ -1,6 +1,4 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
 import {
   recreateCommodityJob,
   spendCommodityJob,
@@ -15,6 +13,8 @@ import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
 import { CheckStatus, CheckType } from '../check/entities/check.entity.js';
 import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 import { DeploymentService } from '../deployment/deployment.service.js';
+import { PalmyraQueueService } from './palmyra-queue.service.js';
+import { TxQueueJobData, TxQueueJobKind } from './palmyra-queue.types.js';
 
 @Injectable()
 export class PalmyraService {
@@ -22,7 +22,7 @@ export class PalmyraService {
   private readonly provider: BlockfrostProvider;
   private readonly factory: EventFactory;
   constructor(
-    @InjectQueue('tx-queue') private queue: Queue,
+    private readonly queue: PalmyraQueueService,
     private configService: ConfigService,
     private readonly checkDb: CheckService,
     private readonly deploymentService: DeploymentService,
@@ -106,12 +106,15 @@ export class PalmyraService {
       const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
 
       await buildSpend(this.factory, { data: jobArgumentsWithUtxoRef }, false);
-      await this.queue.add('spend-commodity', jobArgumentsWithUtxoRef);
-      await this.checkDb.create({
-        id: jobArgumentsWithUtxoRef.id,
-        type: CheckType.SPEND,
-        status: CheckStatus.PENDING,
-      });
+      await this.createCheckAndEnqueue(
+        'spend-commodity',
+        jobArgumentsWithUtxoRef,
+        {
+          id: jobArgumentsWithUtxoRef.id,
+          type: CheckType.SPEND,
+          status: CheckStatus.PENDING,
+        },
+      );
     } catch (error) {
       this.logger.error(error);
       throw new BadRequestException('Spend Tx Failed', {
@@ -124,8 +127,7 @@ export class PalmyraService {
   async dispatchTokenizeCommodity(jobArguments: tokenizeCommodityJob) {
     try {
       await buildMint(this.factory, { data: jobArguments }, false);
-      await this.queue.add('tokenize-commodity', jobArguments);
-      await this.checkDb.create({
+      await this.createCheckAndEnqueue('tokenize-commodity', jobArguments, {
         id: jobArguments.id,
         type: CheckType.TOKENIZE,
         status: CheckStatus.PENDING,
@@ -185,23 +187,44 @@ export class PalmyraService {
         { data: jobArgumentsWithUtxoRef },
         false,
       );
-      await this.queue.add('recreate-commodity', jobArgumentsWithUtxoRef);
-      await this.checkDb.create({
-        id: jobArgumentsWithUtxoRef.id,
-        type: CheckType.RECREATE,
-        status: CheckStatus.PENDING,
-        additionalInfo: {
-          utxos: jobArgumentsWithUtxoRef.utxos,
-          newDataReferences: jobArgumentsWithUtxoRef.newDataReferences,
-          utxoRef: jobArgumentsWithUtxoRef.utxoRef,
+      await this.createCheckAndEnqueue(
+        'recreate-commodity',
+        jobArgumentsWithUtxoRef,
+        {
+          id: jobArgumentsWithUtxoRef.id,
+          type: CheckType.RECREATE,
+          status: CheckStatus.PENDING,
+          additionalInfo: {
+            utxos: jobArgumentsWithUtxoRef.utxos,
+            newDataReferences: jobArgumentsWithUtxoRef.newDataReferences,
+            utxoRef: jobArgumentsWithUtxoRef.utxoRef,
+          },
         },
-      });
+      );
     } catch (error) {
       this.logger.error(error);
       throw new BadRequestException('Recreate Tx Failed', {
         cause: error,
         description: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  private async createCheckAndEnqueue<K extends TxQueueJobKind>(
+    kind: K,
+    data: TxQueueJobData<K>,
+    check: Parameters<CheckService['create']>[0],
+  ): Promise<void> {
+    await this.checkDb.create(check);
+
+    try {
+      await this.queue.enqueue(kind, data);
+    } catch (error) {
+      await this.checkDb.update(data.id, {
+        status: CheckStatus.ERROR,
+        error: `queue error: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      throw error;
     }
   }
 }

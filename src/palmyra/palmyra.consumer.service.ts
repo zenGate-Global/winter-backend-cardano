@@ -1,10 +1,6 @@
-import { Process, Processor } from '@nestjs/bull';
-import { Job } from 'bull';
-
 import {
   recreateCommodityJob,
   spendCommodityJob,
-  tokenizeAndDeployRefCommodityJob,
   tokenizeCommodityJob,
 } from '../types/job.dto';
 import { BlockfrostProvider } from '@meshsdk/core';
@@ -15,7 +11,7 @@ import {
   buildSpend,
 } from './palmyra.builder';
 import { TransactionsService } from '../transactions/transactions.service';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service';
 import { CheckStatus } from 'src/check/entities/check.entity';
@@ -26,10 +22,11 @@ import {
   ZENGATE_MNEMONIC,
   TRANSACTION_RETRY_ATTEMPTS,
 } from 'src/constants';
+import { TxQueueJob } from './palmyra-queue.types.js';
 
 /* eslint-disable  @typescript-eslint/no-non-null-assertion */
 
-@Processor('tx-queue')
+@Injectable()
 export class PalmyraConsumerService {
   private readonly logger = new Logger(PalmyraConsumerService.name);
   private readonly provider: BlockfrostProvider;
@@ -149,25 +146,22 @@ export class PalmyraConsumerService {
     throw lastError || new Error('Unknown error occurred during retry');
   }
 
-  @Process({ name: '*', concurrency: 1 })
-  async processJob(job: Job<unknown>): Promise<void> {
-    switch (job.name) {
+  async processJob(job: TxQueueJob): Promise<void> {
+    switch (job.kind) {
       case 'tokenize-commodity':
         await this.performUpdate(job);
-        return this.tokenizeCommodity(job as Job<tokenizeCommodityJob>);
+        return this.tokenizeCommodity(job.data);
       case 'recreate-commodity':
         await this.performUpdate(job);
-        return this.recreateCommodity(job as Job<recreateCommodityJob>);
+        return this.recreateCommodity(job.data);
       case 'spend-commodity':
         await this.performUpdate(job);
-        return this.spendCommodity(job as Job<spendCommodityJob>);
+        return this.spendCommodity(job.data);
     }
   }
 
-  async performUpdate(job: Job<unknown>) {
+  async performUpdate(job: TxQueueJob) {
     try {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
       await this.checkDb.update(job.data.id, {
         status: CheckStatus.QUEUED,
       });
@@ -180,7 +174,7 @@ export class PalmyraConsumerService {
     }
   }
 
-  async tokenizeCommodity(job: Job<tokenizeCommodityJob>): Promise<void> {
+  async tokenizeCommodity(data: tokenizeCommodityJob): Promise<void> {
     try {
       const {
         mintTxHash: txid,
@@ -189,7 +183,7 @@ export class PalmyraConsumerService {
         singleton,
         contractAddress,
       } = (await this.retryBuildTransaction(() =>
-        buildMint(this.factory, job, true),
+        buildMint(this.factory, { data }, true),
       ))!;
       this.logger.log(
         `Mint successful with singleton: ${singleton} at txid: ${txid}`,
@@ -204,7 +198,7 @@ export class PalmyraConsumerService {
       if (!deploymentExists) {
         try {
           const deployJob = {
-            ...job.data,
+            ...data,
             deployAddress: this.deployerAddress,
             utxoRef: {
               txHash: inputUtxos[0].input.txHash,
@@ -235,31 +229,31 @@ export class PalmyraConsumerService {
         );
       }
 
-      await this.checkDb.update(job.data.id, {
+      await this.checkDb.update(data.id, {
         status: CheckStatus.SUCCESS,
         txid,
       });
       await this.db.create({ txid });
     } catch (error) {
       this.logger.error(`Error minting: ${error}`);
-      await this.checkDb.update(job.data.id, {
+      await this.checkDb.update(data.id, {
         status: CheckStatus.ERROR,
         error: `minting error: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
   }
 
-  async recreateCommodity(job: Job<recreateCommodityJob>): Promise<void> {
+  async recreateCommodity(data: recreateCommodityJob): Promise<void> {
     try {
       const hash = (await this.retryBuildTransaction(() =>
-        buildRecreate(this.factory, job, true),
+        buildRecreate(this.factory, { data }, true),
       )) as string;
-      await this.checkDb.update(job.data.id, {
+      await this.checkDb.update(data.id, {
         status: CheckStatus.SUCCESS,
         txid: hash,
       });
       this.logger.log(`Recreation successful: ${hash}`);
-      for (const [index, u] of job.data.utxos.entries()) {
+      for (const [index, u] of data.utxos.entries()) {
         await this.db.recreate(u.txHash, u.outputIndex, {
           recreated: {
             txHash: hash,
@@ -269,31 +263,31 @@ export class PalmyraConsumerService {
       }
     } catch (error) {
       this.logger.error(`Error recreating: ${error}`);
-      await this.checkDb.update(job.data.id, {
+      await this.checkDb.update(data.id, {
         status: CheckStatus.ERROR,
         error: `recreating error: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
   }
 
-  async spendCommodity(job: Job<spendCommodityJob>): Promise<void> {
+  async spendCommodity(data: spendCommodityJob): Promise<void> {
     try {
       const hash = (await this.retryBuildTransaction(() =>
-        buildSpend(this.factory, job, true),
+        buildSpend(this.factory, { data }, true),
       )) as string;
-      await this.checkDb.update(job.data.id, {
+      await this.checkDb.update(data.id, {
         status: CheckStatus.SUCCESS,
         txid: hash,
       });
       this.logger.log(`Spend successful: ${hash}`);
-      for (const u of job.data.utxos) {
+      for (const u of data.utxos) {
         await this.db.spent(u.txHash, u.outputIndex, {
           spent: hash,
         });
       }
     } catch (error) {
       this.logger.error(`Error spending: ${error}`);
-      await this.checkDb.update(job.data.id, {
+      await this.checkDb.update(data.id, {
         status: CheckStatus.ERROR,
         error: `spending error: ${error instanceof Error ? error.message : String(error)}`,
       });
