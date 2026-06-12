@@ -3,7 +3,6 @@ import {
   ObjectDatumParameters,
 } from '@zengate/winter-cardano-mesh';
 import { UTxO } from '@meshsdk/core';
-import { Job } from 'bull';
 import {
   recreateCommodityJob,
   spendCommodityJob,
@@ -20,7 +19,7 @@ const logger = new Logger('Builder');
 
 export async function buildMint(
   factory: EventFactory,
-  job: Job<tokenizeCommodityJob> | { data: tokenizeCommodityJob },
+  job: { data: tokenizeCommodityJob },
   submit: boolean,
 ): Promise<{
   mintTxHash: string;
@@ -81,7 +80,7 @@ export async function buildMint(
 
 export async function buildDeployRef(
   factory: EventFactory,
-  job: Job<deployRefCommodityJob> | { data: deployRefCommodityJob },
+  job: { data: deployRefCommodityJob },
   submit: boolean,
 ): Promise<{ deploymentTxHash: string; deploymentOutputIndex: number } | void> {
   const finalUtxos = submit
@@ -118,7 +117,7 @@ export async function buildDeployRef(
 
 export async function buildRecreate(
   factory: EventFactory,
-  job: Job<recreateCommodityJob> | { data: recreateCommodityJob },
+  job: { data: recreateCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
   const walletAddress = await factory.getWalletAddress();
@@ -180,7 +179,7 @@ export async function buildRecreate(
 
 export async function buildSpend(
   factory: EventFactory,
-  job: Job<spendCommodityJob> | { data: spendCommodityJob },
+  job: { data: spendCommodityJob },
   submit: boolean,
 ): Promise<string | void> {
   const walletAddress = await factory.getWalletAddress();
