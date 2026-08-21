@@ -31,6 +31,10 @@ funds or mint a duplicate token that cannot be recalled.
 - **Never turn on the inert validation as a one-line fix.** Two separate defects
   hide behind it, and a partial fix rejects every live caller.
 - **`SUCCESS` means submitted, not confirmed.** Nothing waits for a block.
+- **Never "clean up" an import, an override, or a flag that looks redundant.**
+  The root `AGENTS.md` lists what is load-bearing. The `.js` extensions, the
+  bare `src/` imports, the dynamic pg-boss import, the misspelled UTxO file, the
+  repeated deploy flags, and the Mesh override all read as defects and are not.
 - Never run the deploy workflow or any `gcloud` write.
 - Never add a `Co-Authored-By` line or any AI attribution to a commit message or
   a pull request. Never write an em dash. The history has neither.

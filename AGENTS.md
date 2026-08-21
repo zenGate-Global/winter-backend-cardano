@@ -188,6 +188,12 @@ records rules and invariants. Report a working attack in chat, not here.
   comment, and Docker does not strip one, so the pattern matches nothing. A local
   `docker build` copies `.env` into the image. Continuous integration is safe,
   because `.env` is absent there.
+- **The deploy bakes its own cloud credential into every published image.** The
+  authentication step writes a credentials file into the workspace, the build
+  context is the workspace, and `COPY . .` copies it. Neither ignore file names
+  the pattern. The file holds the identity provider name, the service account,
+  and a short-lived bearer token. Adding the pattern to both ignore files is the
+  whole fix.
 - **The container runs the development start command.** It deletes the built
   output and recompiles the whole project on every cold start.
 
@@ -229,6 +235,47 @@ records rules and invariants. Report a working attack in chat, not here.
 
 No secret was ever committed. A sweep of all 23 references found no `.env` file,
 no key, no token, and no large blob. Keep it that way.
+
+## Things that look wrong and are not
+
+Each of these reads like a defect and is load-bearing. Changing one breaks the
+build or the deploy. Leave them alone.
+
+- **The repeated `--set-env-vars` and `--set-secrets` flags merge.** They do not
+  overwrite each other. Consolidating them into one flag is a no-op that breaks
+  any value that holds a comma.
+- **The queue singleton policy is correct.** It limits active jobs, not queued
+  jobs. It is the only guard against two builds that select the same wallet
+  UTxOs.
+- **The `.js` extensions inside TypeScript imports are load-bearing.** The module
+  setting is `nodenext` and the output is CommonJS. The mixed style compiles
+  today. Do not clean it up.
+- **The bare `src/`-rooted imports resolve through `baseUrl`.** They work, and
+  they break under a bundler or a paths change. Do not convert them casually.
+- **pg-boss is loaded with a dynamic import on purpose.** It is a module interop
+  workaround. A static import breaks the build.
+- **The misspelled UTxO service file name is load-bearing.** The builder imports
+  the misspelled path. Rename it only together with its importer.
+- **`AppService.getHello` and the one end-to-end test are template leftovers.**
+  The test asserts a route that the controller does not declare. Its failure is
+  not a regression.
+- **Two of the four dependency overrides have no recorded reason.** The Mesh
+  override is load-bearing, because the library pins a different build and two
+  copies break every `instanceof` check. The `undici` pin caps the major version
+  at 6. Do not bump it to 7 without finding out why the cap exists.
+
+## Errors that mislead
+
+- **`Converting circular structure to JSON` from a chain call is not your bug.**
+  The provider tries to serialize the request object when there is no response,
+  so every transient Blockfrost outage surfaces with that message and hides the
+  real cause. Look at the network, not at the application code.
+- **A `TypeError` about reading a property of `undefined` inside a build usually
+  means an empty UTxO set.** The most common cause is a network and key
+  mismatch.
+- **A missing environment variable crashes at bootstrap with a type error**,
+  because the constants file casts rather than checks. Read the variable name in
+  the stack, not the message.
 
 ## The wire contract
 
