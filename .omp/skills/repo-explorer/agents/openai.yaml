@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Explorer"
+  short_description: "Inspect external repos in a local cache"
+  default_prompt: "Use $repo-explorer to inspect this external repository from the reusable cache and answer with file-backed evidence."
