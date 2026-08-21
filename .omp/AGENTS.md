@@ -59,12 +59,14 @@ Every agent references a role, never a model identifier.
 - `advisor` stays on the OpenAI family, because cross-family disagreement is the
   point of an advisor.
 
-**A deliberate divergence from global and from the sibling repositories.** Global
-`smol` and `mechanic` both lead with Meta Muse Spark on the **contributor tier**,
-where Meta can train on prompts and completions. The siblings accept that,
-because their secrets are rotatable keys and URLs.
+CAUTION: `smol` and `mechanic` both lead with Meta Muse Spark on the
+**contributor tier**, where Meta can train on prompts and completions. That
+matches global and every sibling repository.
 
 This repository holds a **wallet mnemonic**, and its reading agents walk the
-wallet loading path and the signing path. Both roles therefore lead with the
-**standard tier** `meta-muse/muse-spark-1.2`, which is the same model with no
-training rights. It costs only the contributor discount.
+wallet loading path and the signing path. The mnemonic never enters a prompt,
+because `.omp/RULES.md` forbids reading `.env` and forbids printing
+`process.env`. What the tier sees is source code, and this repository is public.
+
+Standard tier `meta-muse/muse-spark-1.2` is the same model with no training
+rights, and it is a one-line swap in `.omp/config.yml`.

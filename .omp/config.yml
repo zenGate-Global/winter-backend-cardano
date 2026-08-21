@@ -40,18 +40,17 @@ tools:
 # Agents reference roles (`@task`, `@slow`, `@smol`), never model ids, so a
 # model rename is one edit in one place.
 #
-# DELIBERATE DIVERGENCE FROM GLOBAL AND FROM THE SIBLING REPOSITORIES.
-# Global `smol` and `mechanic` both lead with Meta Muse Spark on the CONTRIBUTOR
-# tier, where Meta can train on prompts and completions. The sibling repositories
-# accept that, because their secrets are rotatable RPC URLs and API keys.
+# `smol` and `mechanic` lead with Meta Muse Spark on the CONTRIBUTOR tier, which
+# matches global and matches every sibling repository. Meta can train on prompts
+# and completions on that tier.
 #
-# This repository is different. It holds a wallet mnemonic, which is not
-# rotatable in the same sense: a leak spends funds. The reading agents here walk
-# the wallet loading path, the signing path, and the environment plumbing.
+# CAUTION: this repository holds a wallet mnemonic, and its reading agents walk
+# the wallet loading path and the signing path. The mnemonic itself never enters
+# a prompt, because `.omp/RULES.md` forbids reading `.env` and forbids printing
+# `process.env`. What the tier sees is source code, which is public anyway.
 #
-# Both roles therefore lead with the STANDARD tier `meta-muse/muse-spark-1.2`,
-# which is the same model with no training rights. It is a one-line swap and it
-# costs nothing but the contributor discount.
+# Standard tier `meta-muse/muse-spark-1.2` is the same model with no training
+# rights. It is a one-line swap here if that trade stops being acceptable.
 modelRoles:
   # Lead role for `winter-implementer`. Copied verbatim from global.
   #
@@ -62,16 +61,16 @@ modelRoles:
     - openai-codex/gpt-5.6-sol:medium
     - anthropic/claude-opus-5:medium
 
-  # Prewalk hand-off target for `winter-implementer`. Standard tier lead, then a
-  # floor that still writes correct NestJS TypeScript.
+  # Prewalk hand-off target for `winter-implementer`. Contributor tier lead, then
+  # a floor that still writes correct NestJS TypeScript.
   mechanic:
-    - meta-muse/muse-spark-1.2:high
+    - meta-muse/muse-spark-1.2-contributor:high
     - openai-codex/gpt-5.6-terra:medium
     - anthropic/claude-sonnet-5:medium
 
-  # Cheap wide reads. Standard tier lead for the reason above.
+  # Cheap wide reads. Contributor tier lead, as global.
   smol:
-    - meta-muse/muse-spark-1.2:medium
+    - meta-muse/muse-spark-1.2-contributor:medium
     - openai-codex/gpt-5.6-luna:medium
     - anthropic/claude-haiku-4-5:medium
 
