@@ -1,0 +1,98 @@
+# =============================================================================
+# Project-local omp settings: Winter Cardano Backend
+# =============================================================================
+# Layering (lowest -> highest): schema defaults <- global ~/.omp/agent/config.yml
+#   <- THIS FILE <- --config overlays <- runtime CLI flags.
+# Objects deep-merge; scalars and ARRAYS are REPLACED wholesale. `modelRoles` is
+# an object, so naming a role here replaces only that role's list.
+#
+# `omp config set ...` NEVER writes here: hand-edit only. Loaded only when omp
+# starts from a dir whose `.omp/` is non-empty (no ancestor walk-up), so running
+# omp from a subdirectory silently drops everything below.
+#
+# This file lists ONLY settings that differ from what omp/global already gives
+# us. For live values use `omp config list` / `omp config get <key>`.
+# =============================================================================
+
+# --- Safety (deliberate, overrides a global `yolo`) --------------------------
+# write = auto-approve reads + workspace edits, PROMPT before bash/network/exec.
+#
+# This repository is the highest-stakes one in the set:
+#   * `.env` holds ZENGATE_WALLET_MNEMONIC, a spendable Cardano wallet
+#   * the deployed API is PUBLIC and UNAUTHENTICATED, and it signs with that key
+#   * the deploy workflow creates Cloud SQL databases and public Cloud Run
+#     services, and it binds secrets from Secret Manager
+#   * `pnpm lint` carries `--fix` and rewrites files
+#   * POSTGRES_SYNC=true in production, so an entity edit mutates a live schema
+# Override per run with --approval-mode / --yolo when you actually mean it.
+#
+# KNOWN INTERACTION (working as intended, not a hang): `write` prompts before
+# `task` and `eval`, and a non-interactive run (`omp -p ...`, RPC, CI) has no UI
+# to answer that prompt: so SPAWNING SUBAGENTS FAILS non-interactively with
+# "requires approval but no interactive UI available".
+# Use subagents from an interactive session, or for a genuinely read-only batch
+# run add a scoped one-off overlay rather than weakening this file:
+#   omp --config <(printf 'tools:\n  approval:\n    task: allow\n') -p "..."
+tools:
+  approvalMode: write
+
+# --- Model roles -------------------------------------------------------------
+# Agents reference roles (`@task`, `@slow`, `@smol`), never model ids, so a
+# model rename is one edit in one place.
+#
+# `smol` and `mechanic` lead with Meta Muse Spark on the CONTRIBUTOR tier, which
+# matches global and matches every sibling repository. Meta can train on prompts
+# and completions on that tier.
+#
+# CAUTION: this repository holds a wallet mnemonic, and its reading agents walk
+# the wallet loading path and the signing path. The mnemonic itself never enters
+# a prompt, because `.omp/RULES.md` forbids reading `.env` and forbids printing
+# `process.env`. What the tier sees is source code, which is public anyway.
+#
+# Standard tier `meta-muse/muse-spark-1.2` is the same model with no training
+# rights. It is a one-line swap here if that trade stops being acceptable.
+modelRoles:
+  # Lead role for `winter-implementer`. Copied verbatim from global.
+  #
+  # This is a DELIBERATE duplicate, not drift. The implementer references
+  # `@task`, so a change to the global role would silently change the tier that
+  # edits a service that signs Cardano transactions.
+  task:
+    - openai-codex/gpt-5.6-sol:medium
+    - anthropic/claude-opus-5:medium
+
+  # Prewalk hand-off target for `winter-implementer`. Contributor tier lead, then
+  # a floor that still writes correct NestJS TypeScript.
+  mechanic:
+    - meta-muse/muse-spark-1.2-contributor:high
+    - openai-codex/gpt-5.6-terra:medium
+    - anthropic/claude-sonnet-5:medium
+
+  # Cheap wide reads. Contributor tier lead, as global.
+  smol:
+    - meta-muse/muse-spark-1.2-contributor:medium
+    - openai-codex/gpt-5.6-luna:medium
+    - anthropic/claude-haiku-4-5:medium
+
+  # Optional per-turn reviewer, off unless you opt in with `omp --advisor`.
+  # A different family is the whole point of an advisor.
+  advisor: openai-codex/gpt-5.6-sol:high
+
+# --- Tooling (real overrides: these are NOT the schema defaults) ------------
+bash:
+  autoBackground:
+    enabled: true              # schema default false. `pnpm install` and
+                               # `nest build` are slow and must not block.
+lsp:
+  diagnosticsOnEdit: true      # schema default false. There is no CI and there
+                               # are no tests, so the type checker is the only
+                               # automatic signal. Surface it at edit time.
+task:
+  enableLsp: true              # schema default false. Pinned locally so
+                               # subagents keep the TypeScript server even if
+                               # the global config changes.
+
+# --- Sticky rules -----------------------------------------------------------
+# .omp/RULES.md loads as an always-apply rule named `RULES`, enabled whenever the
+# file exists and is non-empty. Frontmatter cannot disable it; the only switch is
+# `ttsr.disabledRules: [RULES]`, better done in a --config overlay.
