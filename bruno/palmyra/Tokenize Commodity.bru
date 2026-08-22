@@ -10,6 +10,10 @@ post {
   auth: none
 }
 
+headers {
+  x-api-key: {{WINTER_API_KEY}}
+}
+
 body:json {
   {
     "tokenName": "Black Tea Test",
