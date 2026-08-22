@@ -14,8 +14,18 @@ import {
   TxQueueJobKind,
 } from './palmyra-queue.types.js';
 
-type PgBossClient = import('pg-boss').PgBoss;
-type PgBossConstructorOptions = import('pg-boss').ConstructorOptions;
+// `import type` is erased at compile time, so pg-boss stays a runtime dynamic
+// import, which this project requires for module interop.
+import type {
+  ConstructorOptions as PgBossConstructorOptions,
+  JobWithMetadata,
+  PgBoss as PgBossClient,
+} from 'pg-boss';
+
+// One constant so the createQueue option and the exhaustion check cannot drift.
+// Note that the createQueue options apply only when the queue row is first
+// created, so changing this does nothing to an existing database.
+const TX_QUEUE_RETRY_LIMIT = 2;
 
 @Injectable()
 export class PalmyraQueueService implements OnModuleInit, OnModuleDestroy {
@@ -42,7 +52,7 @@ export class PalmyraQueueService implements OnModuleInit, OnModuleDestroy {
     await boss.start();
     await boss.createQueue(TX_QUEUE_NAME, {
       policy: 'singleton',
-      retryLimit: 2,
+      retryLimit: TX_QUEUE_RETRY_LIMIT,
       retryDelay: 30,
       retryBackoff: true,
       retryDelayMax: 300,
@@ -58,12 +68,31 @@ export class PalmyraQueueService implements OnModuleInit, OnModuleDestroy {
         localConcurrency: 1,
         pollingIntervalSeconds: 2,
         heartbeatRefreshSeconds: 30,
+        // Needed for retryCount below. This is a worker option, not one of the
+        // createQueue options, so it takes effect on every boot.
+        includeMetadata: true,
       },
-      async ([job]) => {
+      async (jobs) => {
+        const [job] = jobs as unknown as JobWithMetadata<TxQueueJob>[];
         if (!job) {
           return;
         }
-        await this.consumerService.processJob(job.data);
+        try {
+          await this.consumerService.processJob(job.data);
+        } catch (error) {
+          // A rethrown job goes back to pg-boss for retry. On the final attempt
+          // nothing else writes a terminal state, so the check row would sit at
+          // QUEUED for ever and a caller would poll it for ever.
+          const attempt = (job.retryCount ?? 0) + 1;
+          const limit = (job.retryLimit ?? TX_QUEUE_RETRY_LIMIT) + 1;
+          if (attempt >= limit) {
+            await this.consumerService.markRetriesExhausted(
+              job.data.data.id,
+              error,
+            );
+          }
+          throw error;
+        }
       },
     );
 
@@ -82,6 +111,10 @@ export class PalmyraQueueService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`pg-boss queue '${TX_QUEUE_NAME}' stopped`);
   }
 
+  // Returns the pg-boss job id, or 'already-queued' when a job with this id is
+  // already on the queue. pg-boss answers a duplicate `id` with null, and that
+  // is its deduplication guarantee, not a failure. A caller that retries a
+  // request with the same idempotency key lands here.
   async enqueue<K extends TxQueueJobKind>(
     kind: K,
     data: TxQueueJobData<K>,
@@ -94,7 +127,8 @@ export class PalmyraQueueService implements OnModuleInit, OnModuleDestroy {
     const id = await this.boss.send(TX_QUEUE_NAME, payload, { id: data.id });
 
     if (!id) {
-      throw new Error(`pg-boss did not enqueue ${kind} job ${data.id}`);
+      this.logger.log(`${kind} job ${data.id} is already queued`);
+      return 'already-queued';
     }
 
     return id;
