@@ -1,5 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { SpendCommodityResponseDto, UtxoDto } from './spend-commodity.dto';
 
 export class RecreateCommodityDto {
@@ -9,6 +15,9 @@ export class RecreateCommodityDto {
     isArray: true,
   })
   @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => UtxoDto)
   utxos: UtxoDto[];
 
   @ApiProperty({
@@ -17,6 +26,8 @@ export class RecreateCommodityDto {
     example: ['ipfs://someotherhash'],
   })
   @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
   newDataReferences: string[];
 }
 
