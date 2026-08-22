@@ -1,3 +1,4 @@
+import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import {
   recreateCommodityJob,
   spendCommodityJob,
@@ -76,18 +77,6 @@ export class PalmyraConsumerService {
     );
   }
 
-  private isDefinitiveSubmitError(error: unknown): boolean {
-    const msg = error instanceof Error ? error.message : String(error);
-    const statusMatch = msg.match(/"status"\s*:\s*(\d{3})/);
-    if (statusMatch) {
-      const status = Number(statusMatch[1]);
-      if (status >= 400 && status < 500) return true;
-      if (status >= 500) return false;
-    }
-    if (/bad request/i.test(msg)) return true;
-    if (/decoder|deserial/i.test(msg)) return true;
-    return false;
-  }
 
   private isAmbiguousSubmitError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message : String(error);
@@ -103,6 +92,14 @@ export class PalmyraConsumerService {
     )
       return true;
     return false;
+  }
+
+  private isNotFound(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      /"status(?:_code)?"\s*:\s*404/.test(message) ||
+      /has not been found/i.test(message)
+    );
   }
 
   // Only for a failure that happened before anything was submitted, where a
@@ -318,16 +315,14 @@ export class PalmyraConsumerService {
       });
       return;
     }
-    if (this.isDefinitiveSubmitError(error)) {
-      await this.checkDb.update(id, {
-        status: CheckStatus.ERROR,
-        error: message,
-      });
-      return;
-    }
-    // ponytail: automatic reconciliation by hash lookup is the upgrade path
-    const reason = `AMBIGUOUS submit for ${operation}: ${message} (tx ${check.txid} may have landed, reconcile by hash)`;
-    await this.checkDb.update(id, { error: reason });
+    // A submit error alone cannot prove that the stored transaction was
+    // rejected. A duplicate or BadInputs response can mean that the identical
+    // transaction is pending or confirmed.
+    const reason = `AMBIGUOUS submit for ${operation}: ${message} (tx ${check.txid} may have reached the network, reconcile by hash)`;
+    await this.checkDb.update(id, {
+      status: CheckStatus.QUEUED,
+      error: reason,
+    });
     this.logger.warn(
       `Ambiguous submit for ${id} with txid ${check.txid}: ${message}`,
     );
@@ -335,8 +330,8 @@ export class PalmyraConsumerService {
   }
 
   // Called by the queue worker on the last attempt of a job that keeps
-  // throwing. Without this the row keeps whatever non-terminal status it had
-  // and a caller polling for SUCCESS never stops.
+  // throwing. A stored hash remains non-terminal unless the chain proves
+  // success. A lookup failure leaves the row for the reconciler.
   async markRetriesExhausted(id: string, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     const check = await this.checkDb.findOne(id).catch(() => null);
@@ -344,12 +339,6 @@ export class PalmyraConsumerService {
       return;
     }
 
-    // This is the last word on the job, so settle the ambiguity here rather
-    // than leave a note for a person. An ambiguous submit stores the hash
-    // before it sends, so the chain can answer whether the transaction landed.
-    // Recording ERROR for a transaction that did land is the worst outcome
-    // available: the caller must use a new idempotency key to retry, and that
-    // mints a second token for a commodity that already exists.
     if (check.txid) {
       try {
         await this.provider.fetchTxInfo(check.txid);
@@ -362,9 +351,48 @@ export class PalmyraConsumerService {
           `Reconciled ${id} by hash after retries were exhausted: ${check.txid} is on chain`,
         );
         return;
-      } catch {
-        // Absent from the chain, or the lookup itself failed. Both settle as
-        // ERROR, and the message keeps the hash so an operator can re-check.
+      } catch (fetchError) {
+        if (!this.isNotFound(fetchError)) {
+          const reason = `AMBIGUOUS after retries exhausted: ${message} (tx ${check.txid} could not be confirmed, reconcile by hash)`;
+          await this.checkDb.update(id, {
+            status: CheckStatus.QUEUED,
+            error: reason,
+          });
+          this.logger.warn(
+            `Retries exhausted for ${id} with unresolved txid ${check.txid}: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`,
+          );
+          return;
+        }
+        // fetchTxInfo 404: the tx is not confirmed. If it is in the mempool
+        // it can still confirm, so leave it for the reconciler.
+        try {
+          const key = BLOCKFROST_KEY() as string;
+          const bf = key.startsWith('http')
+            ? new BlockFrostAPI({ projectId: 'devnet', customBackend: key })
+            : new BlockFrostAPI({ projectId: key });
+          await bf.mempoolTx(check.txid);
+          const reason = `AMBIGUOUS after retries exhausted: ${message} (tx ${check.txid} is in mempool, reconcile by hash)`;
+          await this.checkDb.update(id, {
+            status: CheckStatus.QUEUED,
+            error: reason,
+          });
+          this.logger.warn(
+            `Retries exhausted for ${id} with tx ${check.txid} in mempool`,
+          );
+          return;
+        } catch (mempoolError) {
+          if (!this.isNotFound(mempoolError)) {
+            const reason = `AMBIGUOUS after retries exhausted: ${message} (tx ${check.txid} mempool lookup failed, reconcile by hash)`;
+            await this.checkDb.update(id, {
+              status: CheckStatus.QUEUED,
+              error: reason,
+            });
+            this.logger.warn(
+              `Retries exhausted for ${id} with mempool lookup failure for ${check.txid}`,
+            );
+            return;
+          }
+        }
       }
     }
 

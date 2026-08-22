@@ -125,21 +125,24 @@ export class PalmyraService {
   }
 
   // A repeat of a request that carried the same `Idempotency-Key` resolves to
-  // the same job identifier. Return before the dry-run build so the caller gets
-  // the original job rather than a second transaction, and so a wallet that
-  // cannot build right now does not turn a settled request into a 502.
-  private async alreadyAccepted(id: string): Promise<boolean> {
-    if (!(await this.checkDb.exists(id))) {
+  // the same job identifier. A PENDING row can have no pg-boss job if the
+  // process stopped after the row insert, so send its deterministic job again.
+  private async alreadyAccepted<K extends TxQueueJobKind>(
+    kind: K,
+    data: TxQueueJobData<K>,
+  ): Promise<boolean> {
+    if (!(await this.checkDb.exists(data.id))) {
       return false;
     }
-    this.logger.log(`idempotent replay for ${id}, returning the existing job`);
+    const check = await this.checkDb.findOne(data.id);
+    if (check.status === CheckStatus.PENDING) {
+      await this.queue.enqueue(kind, data);
+    }
+    this.logger.log(`idempotent replay for ${data.id}, returning the existing job`);
     return true;
   }
 
   async dispatchSpendCommodity(jobArguments: spendCommodityJob) {
-    if (await this.alreadyAccepted(jobArguments.id)) {
-      return;
-    }
     try {
       const utxoPromises = jobArguments.utxos.map((utxo) =>
         this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
@@ -155,6 +158,11 @@ export class PalmyraService {
       const utxoRef = await this.buildUtxoRef(contractAddresses);
 
       const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
+      if (
+        await this.alreadyAccepted('spend-commodity', jobArgumentsWithUtxoRef)
+      ) {
+        return;
+      }
 
       await buildSpend(this.factory, { data: jobArgumentsWithUtxoRef }, false);
       await this.createCheckAndEnqueue(
@@ -177,7 +185,7 @@ export class PalmyraService {
   }
 
   async dispatchTokenizeCommodity(jobArguments: tokenizeCommodityJob) {
-    if (await this.alreadyAccepted(jobArguments.id)) {
+    if (await this.alreadyAccepted('tokenize-commodity', jobArguments)) {
       return;
     }
     try {
@@ -201,9 +209,6 @@ export class PalmyraService {
     }
   }
   async dispatchRecreateCommodity(jobArguments: recreateCommodityJob) {
-    if (await this.alreadyAccepted(jobArguments.id)) {
-      return;
-    }
     try {
       const utxoPromises = jobArguments.utxos.map((utxo) =>
         this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
@@ -219,6 +224,11 @@ export class PalmyraService {
       const utxoRef = await this.buildUtxoRef(contractAddresses);
 
       const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
+      if (
+        await this.alreadyAccepted('recreate-commodity', jobArgumentsWithUtxoRef)
+      ) {
+        return;
+      }
       await buildRecreate(
         this.factory,
         { data: jobArgumentsWithUtxoRef },

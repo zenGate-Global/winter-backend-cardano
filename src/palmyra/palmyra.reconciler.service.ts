@@ -15,6 +15,14 @@ import {
 } from '../check/check.service';
 import { CheckStatus } from '../check/entities/check.entity';
 
+// How long a row must carry its first marker before the sweep may write it off.
+// A confirmed-chain 404 cannot rule out a transaction still in the mempool, so
+// the sweep waits rather than call it a failure. RECONCILE_RECHECK_MIN_AGE_MS
+// overrides it, which is how the check script drives both passes in one run.
+const CHAIN_RECHECK_MIN_AGE_MS_DEFAULT = 24 * 60 * 60 * 1000;
+const CHAIN_RECHECK_MARKER = /\[chain-recheck\](?:@(\S+))?/;
+const CHAIN_RECHECK_MARKER_G = /\[chain-recheck\](?:@\S+)?/g;
+
 // Settles rows that claim to have failed while holding a transaction hash.
 //
 // The consumer writes the hash before it submits, so an ambiguous submit can
@@ -74,7 +82,7 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
     let examined = 0;
     let promoted = 0;
     try {
-      const candidates = await this.checkDb.findErrorsHoldingTxid(
+      const candidates = await this.checkDb.findUnsettledHoldingTxid(
         this.batchSize(),
       );
       for (const row of candidates) {
@@ -98,22 +106,46 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
     return { examined, promoted };
   }
 
+  private isNotFound(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      /"status(?:_code)?"\s*:\s*404/.test(message) ||
+      /has not been found/i.test(message)
+    );
+  }
+
   // Returns true when the row was promoted to SUCCESS.
   private async settle(
     id: string,
     txid: string,
-    error: string | null,
+    rowError: string | null,
   ): Promise<boolean> {
     try {
       await this.provider.fetchTxInfo(txid);
-    } catch {
-      // Absent from the chain, or the provider is unreachable. Both leave the
-      // row as ERROR. Advance the marker so a genuine failure stops being
-      // looked up, and so a provider outage costs at most one wasted pass.
-      const seen = (error ?? '').includes(CHAIN_RECHECK);
-      const base = (error ?? '').replace(CHAIN_RECHECK, '').trimEnd();
+    } catch (fetchError) {
+      if (!this.isNotFound(fetchError)) {
+        return false;
+      }
+
+      const errorText = rowError ?? '';
+      const marker = errorText.match(CHAIN_RECHECK_MARKER);
+      const observedAt = marker?.[1] ? Date.parse(marker[1]) : Number.NaN;
+      const validObservedAt =
+        Number.isFinite(observedAt) &&
+        new Date(observedAt).toISOString() === marker?.[1];
+      const now = Date.now();
+
+      // A confirmed-chain 404 cannot rule out a transaction in the mempool.
+      if (validObservedAt && now - observedAt < this.recheckMinAgeMs()) {
+        return false;
+      }
+
+      const base = errorText.replace(CHAIN_RECHECK_MARKER_G, '').trimEnd();
+      const chainMarker = validObservedAt
+        ? CHAIN_CHECKED
+        : `${CHAIN_RECHECK}@${new Date(now).toISOString()}`;
       await this.checkDb.update(id, {
-        error: `${base} ${seen ? CHAIN_CHECKED : CHAIN_RECHECK}`.trim(),
+        error: `${base} ${chainMarker}`.trim(),
       });
       return false;
     }
@@ -135,6 +167,13 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
     return raw !== undefined && Number.isFinite(parsed) ? parsed : 300;
   }
 
+  private recheckMinAgeMs(): number {
+    const raw = this.configService.get<string>('RECONCILE_RECHECK_MIN_AGE_MS');
+    const parsed = Number(raw);
+    return raw !== undefined && Number.isFinite(parsed) && parsed >= 0
+      ? parsed
+      : CHAIN_RECHECK_MIN_AGE_MS_DEFAULT;
+  }
   private batchSize(): number {
     const raw = this.configService.get<string>('RECONCILE_BATCH_SIZE');
     const parsed = Number(raw);

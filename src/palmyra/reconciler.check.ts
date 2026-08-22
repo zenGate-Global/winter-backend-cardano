@@ -34,19 +34,22 @@ async function main(): Promise<void> {
   const checkDb = app.get(CheckService);
   const reconciler = app.get(PalmyraReconcilerService);
 
-  const seed = async (txid: string): Promise<string> => {
+  const seed = async (
+    txid: string,
+    status: CheckStatus = CheckStatus.ERROR,
+  ): Promise<string> => {
     const id = randomUUID();
-    await checkDb.create({
-      id,
-      type: CheckType.TOKENIZE,
-      status: CheckStatus.ERROR,
-    });
+    await checkDb.create({ id, type: CheckType.TOKENIZE, status });
     await checkDb.update(id, { txid, error: 'simulated ambiguous submit' });
     return id;
   };
 
   const landed = await seed(confirmedTxHash);
   const absent = await seed(absentTxHash);
+  // The consumer parks an ambiguous submit as QUEUED, and pg-boss has no
+  // retries left by then. If the sweep only looked at ERROR, this row would
+  // never be settled and a caller would poll it for ever.
+  const queuedLanded = await seed(confirmedTxHash, CheckStatus.QUEUED);
 
   await reconciler.sweep();
 
@@ -57,6 +60,13 @@ async function main(): Promise<void> {
     `a transaction on chain must be promoted, got ${landedRow.status}`,
   );
   assert.equal(landedRow.error, null, 'a promoted row must carry no error');
+
+  const queuedRow = await checkDb.findOne(queuedLanded);
+  assert.equal(
+    queuedRow.status,
+    CheckStatus.SUCCESS,
+    `a QUEUED row whose transaction is on chain must be promoted, got ${queuedRow.status}`,
+  );
 
   let absentRow = await checkDb.findOne(absent);
   assert.equal(
@@ -86,7 +96,7 @@ async function main(): Promise<void> {
   );
 
   // Third pass: the settled row must no longer be a candidate at all.
-  const candidates = await checkDb.findErrorsHoldingTxid(200);
+  const candidates = await checkDb.findUnsettledHoldingTxid(200);
   assert.ok(
     !candidates.some((row) => row.id === absent),
     'a settled row must leave the candidate set',
