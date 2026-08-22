@@ -10,6 +10,7 @@ import { CheckService } from '../check/check.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { Deployment } from '../deployment/entities/deployment.entity';
 import { PalmyraQueueService } from './palmyra-queue.service';
+import { PalmyraReconcilerService } from './palmyra.reconciler.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Check, Transaction, Deployment])],
@@ -18,6 +19,7 @@ import { PalmyraQueueService } from './palmyra-queue.service';
     PalmyraService,
     PalmyraConsumerService,
     PalmyraQueueService,
+    PalmyraReconcilerService,
     TransactionsService,
     CheckService,
     DeploymentService,

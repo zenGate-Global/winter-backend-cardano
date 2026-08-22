@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import {
   recreateCommodityJob,
   spendCommodityJob,
@@ -11,7 +17,7 @@ import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service.js';
 import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
 import { CheckStatus, CheckType } from '../check/entities/check.entity.js';
-import { NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
+import { BLOCKFROST_KEY, NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 import { DeploymentService } from '../deployment/deployment.service.js';
 import { PalmyraQueueService } from './palmyra-queue.service.js';
 import { TxQueueJobData, TxQueueJobKind } from './palmyra-queue.types.js';
@@ -27,47 +33,113 @@ export class PalmyraService {
     private readonly checkDb: CheckService,
     private readonly deploymentService: DeploymentService,
   ) {
-    this.provider = new BlockfrostProvider(
-      this.configService.get('BLOCKFROST_KEY') as string,
-    );
+    this.provider = new BlockfrostProvider(BLOCKFROST_KEY());
 
     this.factory = new EventFactory(
       NETWORK(),
       ZENGATE_MNEMONIC(),
       this.provider,
       this.provider,
+      // The dry run must use the same budgets as the real build, or a request
+      // that the consumer will reject still returns 201.
+      this.provider,
     );
   }
 
   async getDataByTokenIds(tokenIds: string[]): Promise<ObjectDatumFields[]> {
-    let datums: string[];
+    let datums: ObjectDatumFields[];
     try {
-      // datums = (await this.koios.assetUtxos(tokenIds)).map(
-      //   (utxo) => utxo.inline_datum.bytes,
-      // );
       datums = await Promise.all(
-        tokenIds.map(async (id) => await this.factory.getScriptInfo(id)),
+        tokenIds.map(async (id) => {
+          const assetAddresses = await this.provider.fetchAssetAddresses(id);
+          if (!assetAddresses.length) {
+            throw new Error(`No holder address for asset ${id}`);
+          }
+          for (const entry of assetAddresses) {
+            const utxos = await this.provider.fetchAddressUTxOs(
+              entry.address,
+              id,
+            );
+            const holder = utxos.find(
+              (u) =>
+                u.output.amount.some((a) => a.unit === id) &&
+                !!u.output.plutusData,
+            );
+            if (holder && holder.output.plutusData) {
+              return EventFactory.getObjectDatumFieldsFromPlutusCbor(
+                holder.output.plutusData,
+              );
+            }
+          }
+          throw new Error(`UTxO with datum not found for asset ${id}`);
+        }),
       );
     } catch (error) {
-      this.logger.error(`Blockfrost getScriptInfo error: ${error}`);
-      throw new BadRequestException({
-        message: 'Blockfrost API Error',
-        cause: error.message,
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Blockfrost commodityDetails error: ${message}`);
+      throw new BadGatewayException('Blockfrost API Error', {
+        cause: error,
       });
     }
     try {
-      return datums.map((d: string) =>
-        EventFactory.getObjectDatumFieldsFromPlutusCbor(d),
-      );
+      return datums;
     } catch (error) {
-      this.logger.error(`datum decode error: ${error}`);
-      throw new BadRequestException({
-        message: 'Datum Decode Error',
-        cause: error.message,
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`datum decode error: ${message}`);
+      throw new InternalServerErrorException('Datum Decode Error', {
+        cause: error,
       });
     }
   }
+
+  private async buildUtxoRef(
+    contractAddresses: string[],
+  ): Promise<
+    Record<
+      string,
+      { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+    >
+  > {
+    const utxoRef: Record<
+      string,
+      { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+    > = {};
+    for (const cA of contractAddresses) {
+      try {
+        const deployment =
+          await this.deploymentService.getDeploymentByContractAddress(cA);
+        utxoRef[cA] = {
+          singletonScript: undefined,
+          objectEventScript: {
+            txHash: deployment.deploymentTxHash,
+            outputIndex: deployment.deploymentOutputIndex,
+          },
+        };
+      } catch (error) {
+        this.logger.warn(
+          `Deployment not found for contract address ${cA}: ${error}`,
+        );
+      }
+    }
+    return utxoRef;
+  }
+
+  // A repeat of a request that carried the same `Idempotency-Key` resolves to
+  // the same job identifier. Return before the dry-run build so the caller gets
+  // the original job rather than a second transaction, and so a wallet that
+  // cannot build right now does not turn a settled request into a 502.
+  private async alreadyAccepted(id: string): Promise<boolean> {
+    if (!(await this.checkDb.exists(id))) {
+      return false;
+    }
+    this.logger.log(`idempotent replay for ${id}, returning the existing job`);
+    return true;
+  }
+
   async dispatchSpendCommodity(jobArguments: spendCommodityJob) {
+    if (await this.alreadyAccepted(jobArguments.id)) {
+      return;
+    }
     try {
       const utxoPromises = jobArguments.utxos.map((utxo) =>
         this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
@@ -80,28 +152,7 @@ export class PalmyraService {
         return utxo.output.address;
       });
 
-      const utxoRef: Record<
-        string,
-        { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
-      > = {};
-
-      for (const cA of contractAddresses) {
-        try {
-          const deployment =
-            await this.deploymentService.getDeploymentByContractAddress(cA);
-          utxoRef[cA] = {
-            singletonScript: undefined,
-            objectEventScript: {
-              txHash: deployment.deploymentTxHash,
-              outputIndex: deployment.deploymentOutputIndex,
-            },
-          };
-        } catch (error) {
-          this.logger.warn(
-            `Deployment not found for contract address ${cA}: ${error}`,
-          );
-        }
-      }
+      const utxoRef = await this.buildUtxoRef(contractAddresses);
 
       const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
 
@@ -116,15 +167,19 @@ export class PalmyraService {
         },
       );
     } catch (error) {
-      this.logger.error(error);
-      throw new BadRequestException('Spend Tx Failed', {
+      this.logger.error(
+        `Spend Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new BadGatewayException('Spend Tx Failed', {
         cause: error,
-        description: error instanceof Error ? error.message : String(error),
       });
     }
   }
 
   async dispatchTokenizeCommodity(jobArguments: tokenizeCommodityJob) {
+    if (await this.alreadyAccepted(jobArguments.id)) {
+      return;
+    }
     try {
       await buildMint(this.factory, { data: jobArguments }, false);
       await this.createCheckAndEnqueue('tokenize-commodity', jobArguments, {
@@ -137,15 +192,18 @@ export class PalmyraService {
         },
       });
     } catch (error) {
-      this.logger.error(error);
-      throw new BadRequestException('Mint Tx Failed', {
+      this.logger.error(
+        `Mint Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new BadGatewayException('Mint Tx Failed', {
         cause: error,
-        description: error instanceof Error ? error.message : String(error),
       });
     }
   }
-
   async dispatchRecreateCommodity(jobArguments: recreateCommodityJob) {
+    if (await this.alreadyAccepted(jobArguments.id)) {
+      return;
+    }
     try {
       const utxoPromises = jobArguments.utxos.map((utxo) =>
         this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
@@ -158,28 +216,7 @@ export class PalmyraService {
         return utxo.output.address;
       });
 
-      const utxoRef: Record<
-        string,
-        { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
-      > = {};
-
-      for (const cA of contractAddresses) {
-        try {
-          const deployment =
-            await this.deploymentService.getDeploymentByContractAddress(cA);
-          utxoRef[cA] = {
-            singletonScript: undefined,
-            objectEventScript: {
-              txHash: deployment.deploymentTxHash,
-              outputIndex: deployment.deploymentOutputIndex,
-            },
-          };
-        } catch (error) {
-          this.logger.warn(
-            `Deployment not found for contract address ${cA}: ${error}`,
-          );
-        }
-      }
+      const utxoRef = await this.buildUtxoRef(contractAddresses);
 
       const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
       await buildRecreate(
@@ -202,10 +239,11 @@ export class PalmyraService {
         },
       );
     } catch (error) {
-      this.logger.error(error);
-      throw new BadRequestException('Recreate Tx Failed', {
+      this.logger.error(
+        `Recreate Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new BadGatewayException('Recreate Tx Failed', {
         cause: error,
-        description: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -215,16 +253,55 @@ export class PalmyraService {
     data: TxQueueJobData<K>,
     check: Parameters<CheckService['create']>[0],
   ): Promise<void> {
-    await this.checkDb.create(check);
+    try {
+      await this.checkDb.create(check);
+    } catch (error) {
+      // Two requests carrying the same idempotency key can both pass the
+      // pre-check, so the primary key is the real serialization point. A
+      // conflict means the other request already accepted this job.
+      if (this.isDuplicateKey(error)) {
+        this.logger.log(
+          `idempotent replay for ${data.id} lost the insert race, returning the existing job`,
+        );
+        return;
+      }
+      this.logger.error(
+        `check create failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new InternalServerErrorException('Check persistence failed', {
+        cause: error,
+      });
+    }
 
     try {
       await this.queue.enqueue(kind, data);
     } catch (error) {
-      await this.checkDb.update(data.id, {
-        status: CheckStatus.ERROR,
-        error: `queue error: ${error instanceof Error ? error.message : String(error)}`,
-      });
+      try {
+        await this.checkDb.update(data.id, {
+          status: CheckStatus.ERROR,
+          error: `queue error: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      } catch (updateError) {
+        this.logger.error(
+          `check update after queue failure failed: ${updateError instanceof Error ? updateError.message : String(updateError)}`,
+        );
+        throw new InternalServerErrorException('Check persistence failed', {
+          cause: updateError,
+        });
+      }
       throw error;
     }
+  }
+
+  // Postgres reports a unique or primary key violation as 23505. TypeORM wraps
+  // the driver error, so check both the wrapper and the driver payload.
+  private isDuplicateKey(error: unknown): boolean {
+    const candidate = error as {
+      code?: unknown;
+      driverError?: { code?: unknown };
+    };
+    return (
+      candidate?.code === '23505' || candidate?.driverError?.code === '23505'
+    );
   }
 }

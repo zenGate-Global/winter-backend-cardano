@@ -1,12 +1,18 @@
 import {
   Body,
   Controller,
+  Headers,
+  HttpCode,
   HttpException,
   HttpStatus,
   Post,
 } from '@nestjs/common';
 import { PalmyraService } from './palmyra.service';
-import { v4 as uuidv4 } from 'uuid';
+import {
+  IDEMPOTENCY_KEY_MAX_LENGTH,
+  IdempotencyScope,
+  resolveJobId,
+} from './idempotency';
 import {
   CommodityDetailsDto,
   CommodityDetailsResponseDto,
@@ -14,6 +20,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { ErrorResponse } from './dto/error.dto';
@@ -35,8 +42,23 @@ import {
 export class PalmyraController {
   constructor(private readonly palmyraService: PalmyraService) {}
 
+  // A caller may send an `Idempotency-Key` header. The same key on the same
+  // route always resolves to the same job, so a retry of a request whose
+  // response was lost returns the original job instead of starting a second
+  // transaction. Without the header the behaviour is unchanged.
+  private jobId(scope: IdempotencyScope, key?: string): string {
+    if (key !== undefined && key.trim().length > IDEMPOTENCY_KEY_MAX_LENGTH) {
+      throw new HttpException(
+        `Idempotency-Key must be ${IDEMPOTENCY_KEY_MAX_LENGTH} characters or fewer`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return resolveJobId(scope, key);
+  }
+
   @Post('commodityDetails')
-  @ApiCreatedResponse({
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({
     description:
       'returns data associated to the contract the token with matching id is in',
     type: CommodityDetailsResponseDto,
@@ -71,8 +93,9 @@ export class PalmyraController {
   })
   async spendCommodity(
     @Body() message: SpendCommodityDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<SpendCommodityResponseDto> {
-    const id = uuidv4();
+    const id = this.jobId('spend-commodity', idempotencyKey);
     await this.palmyraService.dispatchSpendCommodity({
       id,
       utxos: message.utxos,
@@ -92,8 +115,9 @@ export class PalmyraController {
   })
   async tokenizeCommodity(
     @Body() message: TokenizeCommodityDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<{ message: string; id: string }> {
-    const id = uuidv4();
+    const id = this.jobId('tokenize-commodity', idempotencyKey);
     await this.palmyraService.dispatchTokenizeCommodity({
       id,
       tokenName: message.tokenName,
@@ -104,7 +128,7 @@ export class PalmyraController {
 
   @Post('recreateCommodity')
   @ApiCreatedResponse({
-    description: 'returns queue data associated to tokenizing',
+    description: 'returns queue data associated to recreating',
     type: RecreateCommodityResponseDto,
   })
   @ApiBadRequestResponse({
@@ -113,6 +137,7 @@ export class PalmyraController {
   })
   async recreateCommodity(
     @Body() message: RecreateCommodityDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<{ message: string; id: string }> {
     const utxoLen = message.utxos.length;
     const dataLen = message.newDataReferences.length;
@@ -122,17 +147,13 @@ export class PalmyraController {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const id = uuidv4();
-    try {
-      await this.palmyraService.dispatchRecreateCommodity({
-        id,
-        utxos: message.utxos,
-        newDataReferences: message.newDataReferences,
-        utxoRef: {},
-      });
-      return { message: 'success', id };
-    } catch (error) {
-      throw error;
-    }
+    const id = this.jobId('recreate-commodity', idempotencyKey);
+    await this.palmyraService.dispatchRecreateCommodity({
+      id,
+      utxos: message.utxos,
+      newDataReferences: message.newDataReferences,
+      utxoRef: {},
+    });
+    return { message: 'success', id };
   }
 }

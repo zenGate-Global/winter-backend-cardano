@@ -10,8 +10,9 @@ export class UpdateCheckDto extends PartialType(CreateCheckDto) {
     enum: CheckStatus,
     example: CheckStatus.SUCCESS,
   })
+  @IsOptional()
   @IsEnum(CheckStatus)
-  status: CheckStatus;
+  status?: CheckStatus;
 
   @ApiProperty({
     description: 'txid',
@@ -23,10 +24,18 @@ export class UpdateCheckDto extends PartialType(CreateCheckDto) {
   txid?: string;
 
   @ApiProperty({
+    description: 'signedTx CBOR',
+    example: null,
+  })
+  @IsOptional()
+  @IsString()
+  signedTx?: string | null;
+
+  @ApiProperty({
     description: 'error',
     example: null,
   })
   @IsOptional()
   @IsString()
-  error?: string;
+  error?: string | null;
 }
