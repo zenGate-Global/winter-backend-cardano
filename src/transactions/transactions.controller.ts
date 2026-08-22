@@ -4,14 +4,11 @@ import {
   HttpException,
   HttpStatus,
   Param,
+  Query,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { Transaction } from './entities/transaction.entity';
-import {
-  ApiBadRequestResponse,
-  ApiCreatedResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { ErrorResponse } from '../palmyra/dto/error.dto';
 
 @ApiTags('Transactions')
@@ -20,17 +17,22 @@ export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
   @Get()
-  @ApiCreatedResponse({
-    description: 'Returns all transactions',
+  @ApiOkResponse({
+    description: 'Returns all transactions (default 50, max 200)',
     type: Transaction,
     isArray: true,
   })
-  async findAll(): Promise<Transaction[]> {
-    return this.transactionsService.findAll();
+  async findAll(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ): Promise<Transaction[]> {
+    const take = Math.min(Math.max(parseInt(limit ?? '50', 10) || 50, 1), 200);
+    const skip = Math.max(parseInt(offset ?? '0', 10) || 0, 0);
+    return this.transactionsService.findAll(take, skip);
   }
 
   @Get(':txid')
-  @ApiCreatedResponse({
+  @ApiOkResponse({
     description: 'Returns a transaction by txid',
     type: Transaction,
     isArray: true,
@@ -40,7 +42,7 @@ export class TransactionsController {
     type: ErrorResponse,
   })
   async findOne(@Param('txid') txid: string): Promise<Transaction[]> {
-    if (!/[0-9A-Fa-f]{6}/g.test(txid) || txid.length !== 64) {
+    if (!/^[0-9A-Fa-f]{64}$/.test(txid)) {
       throw new HttpException(
         'txid must be hex of length 64',
         HttpStatus.BAD_REQUEST,
@@ -60,16 +62,4 @@ export class TransactionsController {
     return [res];
   }
 
-  // @Patch(':txid')
-  // async update(
-  //   @Param('txid') txid: string,
-  //   @Body() updateTransactionDto: UpdateTransactionDto,
-  // ) {
-  //   return this.transactionsService.update(+txid, updateTransactionDto);
-  // }
-  //
-  // @Delete(':txid')
-  // remove(@Param('txid') txid: string) {
-  //   return this.transactionsService.remove(+txid);
-  // }
 }

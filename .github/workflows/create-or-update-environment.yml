@@ -171,17 +171,10 @@ jobs:
             --set-secrets "ZENGATE_WALLET_MNEMONIC=ZENGATE_WALLET_MNEMONIC:latest" \
             --set-secrets "BLOCKFROST_KEY=BLOCKFROST_KEY:latest" \
             --set-secrets "PINATA_JWT=PINATA_JWT:latest" \
+            --set-secrets "WINTER_API_KEY=WINTER_API_KEY:latest" \
             --set-env-vars "POSTGRES_SYNC=true" \
-            --set-env-vars "POSTGRES_LOGGING=true" \
+            --set-env-vars "POSTGRES_LOGGING=false" \
             --labels "env_short_name=${{ env.SHORT_NAME }}"
-
-          # TODO: Better if Firebase is routing this service into a static context path
-          # TODO: Ask what is this?
-          gcloud run services add-iam-policy-binding $SHORT_NAME-winter-cardano-api \
-            --region ${{ vars.GCP_REGION }} \
-            --project ${{ vars.GCP_PROJECT_ID }} \
-            --member="allUsers" \
-            --role="roles/run.invoker"
 
           echo "API_URL=$(gcloud run services describe $SHORT_NAME-winter-cardano-api --region ${{ vars.GCP_REGION }} --project ${{ vars.GCP_PROJECT_ID }} --format='value(status.url)')" >> $GITHUB_ENV
 

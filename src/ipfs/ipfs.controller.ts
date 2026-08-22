@@ -17,7 +17,6 @@ import { ErrorResponse } from '../palmyra/dto/error.dto';
 import {
   AggregationEvent,
   AssociationEvent,
-  Event,
   ObjectEvent,
   TransactionEvent,
   TransformationEvent,
@@ -47,7 +46,6 @@ export class IpfsController {
       | TransformationEvent
       | AssociationEvent,
   ): Promise<StoreIpfsResponseDto> {
-    console.log(`raw data: ${data}`);
     try {
       const res = await this.ipfsService.storeJson(data);
       return {
