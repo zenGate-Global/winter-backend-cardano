@@ -40,6 +40,12 @@ nul
 .env.testnet
 .env.mainnet
 
+# Deploy credentials
+gha-creds-*.json
+.specstory/
+.planning/
+yaci-cli.history
+
 # node
 package-lock.json
 yarn.lock
