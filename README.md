@@ -1,7 +1,7 @@
 # Winter Cardano Backend
-Winter protocol service for the Cardano blockchain. Metadata standard follows the [EPCIS](https://www.gs1.org/standards/epcis) stanard. 
+Winter protocol service for the Cardano blockchain. Metadata standard follows the [EPCIS](https://www.gs1.org/standards/epcis) standard.
 
-To see the OpenAPI sepcification, along with other usage details and example, please check documentation [overview](https://docs-winter.palmyra.app/docs/Backend/overview).
+To see the OpenAPI specification, along with other usage details and example, please check documentation [overview](https://docs-winter.palmyra.app/docs/Backend/overview).
 
 **Note: This application should be considered an MVP/PoC.**
 
@@ -13,23 +13,22 @@ To see the OpenAPI sepcification, along with other usage details and example, pl
 5. [Bruno](https://www.usebruno.com): If testing API endpoints locally.
 
 ## Basic Setup
-1. Copy `.env.example` to `.env` and fill in the required environment variables.
-2. Run `docker compose up --build`
-3. Use the Bruno collection from the repository to test out the exposed API endoints.
+1. Copy `.env.example` to `.env` and fill in the required environment variables, including `WINTER_API_KEY`.
+2. Run `docker compose up --build` (the API listens on `4000`).
+3. Use the Bruno collection from the repository to test out the exposed API endpoints.
 
 ## Important Environment Variables
 - The `NETWORK` can be one of `mainnet` | `preview` | `preprod`.
 - The `BLOCKFROST_KEY` should be configured depending on the value used for `NETWORK`.
 - The `TRANSACTION_RETRY_ATTEMPTS` (optional, default: 3) configures how many times to retry failed transactions when invalid hashes are received.
 
-## Basic Usage Guideline
-In order to submit data to IPFS and then mint an NFT on the Cardano blockchain serving as a reference to the data, you should make the following API calls:
+`POST /ipfs`: Here you include the metadata in the EPCIS format that will be uploaded to IPFS. The response will be the IPFS CID. Every request must send `x-api-key`.
 
-`POST /ipfs`: Here you include the metadata in the EPCIS format that will be uploaded to IPFS. The response will be the IPFS CID.
+`POST /palmyra/tokenizeCommodity`: Here you include the IPFS CID and token name in the body. Note that the token name can only be 32 bytes long. The response will include a job id, which can be used to check the status of the job in the queue.
 
-`POST /palmyra/tokenizeCommodity`: Here you include the IPFS CID and token name in the body. Note that the token name can only be 32 bytes long. The response will include a job id, which can be used to check that status of the job in the queue.
+`GET /check/:id`: Include the job id as a path parameter to get the status of the job. If there is a `SUCCESS` status, then the response will also contain a valid Cardano transaction id, which can be used to look up the transaction on the explorer corresponding to the Cardano network type used to run the application. `SUCCESS` means submitted, not confirmed. The transaction may not appear immediately until it is confirmed in a block.
 
-`GET /check/:id`: Include the job id as a query parameter to get the status of the job. If there is a `SUCCESS` status, then the response will also contain a valid Cardano transaction id, which can be used to look up the transaction on the explorer corresponding to the Cardano network type used to run the application. Note that the transaction may not appear immediately, since there will be a delay until it is confirmed to be included inside a block.
+All requests require `x-api-key`. The backend validates UTxO references and token names with strict checks. The EPCIS payload on `POST /ipfs` is accepted as provided and pinned without schema enforcement.
 
 ## Transaction Retry Handling
 The application includes automatic retry logic for transaction building operations. Transactions will be automatically retried when:

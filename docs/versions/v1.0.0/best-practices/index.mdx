@@ -20,7 +20,7 @@ order: index
     {
       name: "API Key Management",
       type: "Guideline",
-      description: "Restrict API keys (like Maestro or NFT.Storage) with IP whitelisting or other available security features.",
+      description: "Restrict API keys (like Blockfrost or Pinata) with IP whitelisting or other available security features. The Winter backend itself requires x-api-key on every request.",
       required: true
     }
   ]}
@@ -54,7 +54,7 @@ This section focuses on the "blockchain" aspect: cost, permanence, and efficienc
     {
       name: "Handling Transaction Confirmations",
       type: "Guideline",
-      description: "Always use await winterEvent.waitForTx(txHash) or a similar confirmation-checking mechanism before attempting to use the outputs of a transaction you just submitted. Rollbacks are also a possibility, so its best to even wait for a few blocks to pass.",
+      description: "The backend marks a job SUCCESS when the transaction is submitted, not when it is confirmed. Poll GET /check/{id} for SUCCESS, then confirm with your Blockfrost provider or a Cardano explorer. Wait a few blocks before you spend the new outputs.",
       required: true
     }
   ]}
@@ -70,19 +70,19 @@ This is for users running your winter-backend-cardano service.
     {
       name: "Production vs. Development Configuration",
       type: "Guideline",
-      description: "For production environments, always set POSTGRES_SYNC=false. Only set it to true during initial setup or active development. POSTGRES_SYNC=true can cause destructive changes to your database schema and data if the TypeORM entities are modified.",
+      description: "For production environments, keep POSTGRES_SYNC=true. The service creates its tables with TypeORM synchronize and has no migrations, so setting it to false leaves the database empty. Review entity changes carefully because they apply on the next deploy.",
       required: true
     },
     {
-      name: "Database & Redis Backups",
+      name: "Database Backups",
       type: "Guideline",
-      description: "Implement a regular backup strategy for your PostgreSQL database and your Redis instance. Your PostgreSQL data contains a historical record of events, and your Redis data is critical for live UTXO management.",
+      description: "Implement a regular backup strategy for your PostgreSQL database. It holds the event history and the pg-boss queue. Back up the Postgres instance, not a separate Redis system.",
       required: true
     },
     {
       name: "Monitoring and Logging",
       type: "Guideline",
-      description: "Integrate the backend with a logging and monitoring service. Key metrics to watch include: API endpoint error rates (4xx/5xx), transaction submission failures, database query latency, and Redis connectivity.",
+      description: "Integrate the backend with a logging and monitoring service. Key metrics to watch include: API endpoint error rates (4xx/5xx), transaction submission failures, and database query latency.",
       required: false
     }
   ]}
@@ -104,7 +104,7 @@ This section is about the data before it gets referenced on-chain.
     {
       name: "IPFS Pinning Strategy",
       type: "Guideline",
-      description: "Understand the data persistence policy of your IPFS provider (e.g., NFT.Storage). For critical, long-term data, consider running your own IPFS node or using a dedicated pinning service to ensure your metadata remains available indefinitely. The blockchain only stores a link (the CID) to the metadata. If the data is no longer available on the IPFS network, that link becomes useless.",
+      description: "Understand the data persistence policy of your IPFS provider (e.g., Pinata). For critical, long-term data, consider running your own IPFS node or using a dedicated pinning service to ensure your metadata remains available indefinitely. The blockchain only stores a link (the CID) to the metadata. If the data is no longer available on the IPFS network, that link becomes useless.",
       required: true
     }
   ]}

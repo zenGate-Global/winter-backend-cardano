@@ -35,16 +35,12 @@ the validators live inside an npm package, not in an Aiken repository here.
 and its pull-request trigger is commented out. An agent working here **is** the
 gate.
 
-**The gate is `npx tsc --noEmit` and nothing else.** `pnpm lint` exits 2 without
-reading a source file, because ESLint 10 needs a flat config that this repository
-does not have. `pnpm test` finds zero specs. Never report either as evidence.
+**The gate is `pnpm exec tsc --noEmit` and nothing else.** `pnpm lint` is check-only, `pnpm test` finds zero specs. Never report either as evidence.
 
-**The deployed service is public and unauthenticated, and it signs with a live
-wallet mnemonic.** That combination is why the boundaries in the root file are
-strict.
+**The deployed service is reachable from the internet and protected by `x-api-key`.** It signs with a live wallet mnemonic. That combination is why the boundaries in the root file are strict. The process refuses to start without `WINTER_API_KEY`.
 
-**The repository is public.** Record an invariant in a tracked file. Report a
-working attack in chat.
+**The repository is public.** Record an invariant in a tracked file. Report a working attack in chat.
+
 
 ## Model routing
 

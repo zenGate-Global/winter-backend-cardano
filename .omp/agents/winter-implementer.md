@@ -24,13 +24,10 @@ runs on a push. There are no tests.
 Before you report a change as done:
 
 ```
-npx tsc --noEmit     # the only working automatic signal. It passes clean today.
+pnpm exec tsc --noEmit   # the only working automatic signal. It prints nothing on success.
 ```
 
-Report exactly what it printed. **Do not run `pnpm lint` and read a clean result
-as evidence.** It exits 2 without reading a source file, because ESLint 10 needs
-a flat config and this repository has only the legacy one. **Never write that
-tests pass.** `pnpm test` finds no specs.
+Report exactly what it printed. `pnpm lint` is check-only. Never write that tests pass. `pnpm test` finds no specs.
 
 ## Prewalk: what you keep
 
@@ -68,8 +65,7 @@ mints a second token. Never add a retry around anything that submits.
 `BadRequestException` with an object first argument returns that object verbatim.
 An `HttpException` with a `cause` option does not. They look alike.
 
-**A raw error object in a log line can leak the Blockfrost key.** There is no
-redaction. What stops it today is a vendor detail, not this code.
+**A raw error object in a log line can leak the Blockfrost key.** Inbound logs redact `x-api-key`, but a client error does not. Keep secrets out of every other log field.
 
 **Never let a token amount or a lovelace total become a JavaScript `number`.**
 The code uses `BigInt` correctly today. Keep it that way.

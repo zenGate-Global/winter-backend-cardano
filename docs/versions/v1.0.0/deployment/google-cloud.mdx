@@ -9,11 +9,10 @@ order: 1
 Within zenGate, we are using Google Cloud as our hosting infrastructure for most of our projects, so below are some good steps to follow for using this provider.
 
 - Use Google Cloud Run for deploying the containerized application, make sure to provide enough memory to the instance, otherwise the project will fail to startup. More than 500 MB will be needed.
-- Use Google Cloud Memorystore for Redis for hosting the requried Redis instance. For a staging environment, it is fine to use the Basic Tier. However, for a production environment, it is recommended to use the Standard Tier with one replica in case of failover from the primary instance. The queue cannot be flushed otherwise requests will need to be resubmitted to the application for submitting transactions to the Cardano blockchain.
-- With Google Cloud Memory Store for Redis, create the instance using the Private Service Access connection mode, ensure you provide the correct subnet value as an environment variable when wanting to connect to the instance.
-- Note that unlike the Google Cloud Run, the Redis instance does not get recreated for each new deployment.
-- Use Google Cloud SQL for hosting the required Postgres database instance.
-- The repository uses a GitHub workflow to deploy a Google Cloud instance whenever changes are merged/pushed to the remote repository, which is used as our staging or production environment depending on the branch. This is useful for testing integrations of the service within other applications.
+- Use Google Cloud SQL for hosting the required Postgres database instance. The queue runs inside Postgres with pg-boss. There is no Redis or Memorystore to provision.
+- The repository uses a GitHub workflow with a manual workflow_dispatch trigger to deploy. There is no automatic deploy on push or merge.
+
+> Note: This page predates the current deployment workflow and queue design. Treat the Redis and trigger details as outdated. The statements above reflect the current system. A full rewrite is planned.
 
 ## Common Google Cloud Deployment Errors
 
@@ -22,4 +21,4 @@ Within zenGate, we are using Google Cloud as our hosting infrastructure for most
 
 ## Other Hosting Providers
 
-The setup process should be similar as for GCP, just make sure that there is access to Redis and Postgre.
+The setup process is similar for other providers. Ensure access to Postgres. No Redis is required.

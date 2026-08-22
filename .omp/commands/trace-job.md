@@ -32,9 +32,7 @@ Walk it in order and cite `file:line` at each step.
 
 ## Common symptoms
 
-- **Stuck in `QUEUED` forever.** The handler died, or a retry loop never ends.
-  There is no reaper and no timeout sweep. The check table has no timestamp
-  columns, so age is not visible.
+- **Stuck in `QUEUED` for many retries.** The handler died, or a bounded retry loop exhausted attempts. There is no reaper and no timeout sweep. The check table has no timestamp columns, so age is not visible.
 - **Nothing moves at all.** Production runs with a minimum of zero instances, and
   the worker runs in process. With no instance alive, nothing polls.
 - **`ERROR` right after a mint.** A recreate or a spend needs a `transaction` row

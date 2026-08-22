@@ -6,6 +6,6 @@ order: 2
 
 # Bruno
 
-Once the application is started succesfully, you can use Bruno to submit API requests to the exposed endpoints, prefixed with: `http://localhost:PORT`, where `PORT` is the value assigned to the same environment variable in the `.env` file.
+Once the application is started successfully, you can use Bruno to submit API requests to the exposed endpoints, prefixed with `http://localhost:4000`. Compose hard-codes `4000:4000`.
 
-If you are using Bruno, make sure to select the `local` environment and assign the `http://localhost:PORT` url to the `winter` variable. There are two other environments for `staging` and `production`, where a valid url to where the application is being hosted should be used instead.
+If you are using Bruno, make sure to select the `local` environment and assign `http://localhost:4000` to the `winter` variable. There are two other environments for `staging` and `production`, where a valid url to where the application is being hosted should be used instead. The Bruno collection now sends `x-api-key` on every request.

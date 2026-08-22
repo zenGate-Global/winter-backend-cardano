@@ -14,7 +14,7 @@ To exempt one line, put this on the line before it:
     <!-- ste-ignore-next-line -->
 
 Usage: scripts/ste-check.py [path ...]
-Default paths: README.md AGENTS.md docs
+Default paths: AGENTS.md CLAUDE.md .omp/RULES.md .omp/AGENTS.md .omp/agents .omp/commands
 Exit code 0 means no violation. Exit code 1 means at least one violation.
 """
 
@@ -225,7 +225,7 @@ def collect(paths: list[str]) -> list[Path]:
 
 
 def main() -> int:
-    paths = sys.argv[1:] or ["README.md", "AGENTS.md", "docs"]
+    paths = sys.argv[1:] or ["AGENTS.md", "CLAUDE.md", ".omp/RULES.md", ".omp/AGENTS.md", ".omp/agents", ".omp/commands"]
     files = collect(paths)
     if not files:
         print("ste-check: no Markdown file found", file=sys.stderr)
