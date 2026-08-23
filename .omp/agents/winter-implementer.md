@@ -18,16 +18,22 @@ EPCIS records to IPFS and mints a Cardano NFT that points at them.
 
 ## You are the gate
 
-There is no continuous integration. Nothing runs on a pull request and nothing
-runs on a push. There are no tests.
+No build, no type check and no test runs on a pull request. CodeQL runs through
+GitHub default setup and never builds the project. There are no tests.
 
 Before you report a change as done:
 
 ```
-pnpm exec tsc --noEmit   # the only working automatic signal. It prints nothing on success.
+pnpm exec tsc --noEmit   # prints nothing on success
+pnpm lint                # check-only, and it passes. lint:fix rewrites files.
 ```
 
-Report exactly what it printed. `pnpm lint` is check-only. Never write that tests pass. `pnpm test` finds no specs.
+If you touched the recreate pairing or the reconciliation paths, run the check
+script that covers it. Each one fails when its logic is reverted, so a pass
+means something. Never weaken one to make it green.
+
+Report exactly what they printed. Never write that tests pass, because
+`pnpm test` finds no specs.
 
 ## Prewalk: what you keep
 

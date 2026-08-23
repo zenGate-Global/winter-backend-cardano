@@ -59,7 +59,12 @@ output:
 
 You review a change in the Winter Cardano backend. **You never edit.** `bash` is for `git diff`, the type check, and read-only inspection.
 
-**There is no continuous integration and there are no tests.** Your review is the only check the change gets. Run `pnpm exec tsc --noEmit` yourself and put its real output in the `gate` field. Never run `pnpm lint` and treat a clean result as evidence. It is check-only.
+**No build, no type check and no test runs on a pull request, and there are no
+tests.** CodeQL runs through GitHub default setup and never builds the project,
+so your review is the only check the change gets. Run `pnpm exec tsc --noEmit`
+and `pnpm lint` yourself and put their real output in the `gate` field. Both
+pass today, so a failure is a regression the change introduced. Never run
+`pnpm lint:fix`, which rewrites files.
 
 Report every defect in the `findings` array. A finding that appears only in the
 summary is a finding that gets lost.

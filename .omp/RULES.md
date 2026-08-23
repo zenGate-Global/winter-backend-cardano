@@ -9,11 +9,15 @@ or mint a duplicate token that cannot be recalled.
   - Never print `process.env` as a whole, and never print a mnemonic or a key.
   - Treat `docker compose config` and `docker inspect` as commands that print
     secrets.
-- **You are the gate.** There is no continuous integration. Nothing runs on a
-  pull request. Run the type check and report exactly what it printed.
+- **You are the gate.** No build, no type check and no test runs on a pull
+  request. CodeQL runs through GitHub default setup and never builds the project.
+  Run the type check and the lint, and report exactly what they printed.
   - **There are no tests.** `pnpm test` finds zero specs. Never write that tests
     pass.
-  - `pnpm lint` is check-only.
+  - `pnpm lint` is check-only and passes. `pnpm lint:fix` rewrites files.
+  - Three check scripts cover the recreate pairing and the reconciliation paths.
+    Two of them need a live database and a Blockfrost key. Never weaken one to
+    make it pass.
 - **Never point a local run at mainnet or at a funded wallet.** Use a test
   network.
 - **Never change an entity file casually.** `POSTGRES_SYNC=true` runs in

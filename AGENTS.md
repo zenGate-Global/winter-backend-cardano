@@ -16,11 +16,13 @@ The default branch is `main`. **The repository is public.**
 Three facts shape every decision here, and none of them is visible from a single
 file.
 
-1. **There is no continuous integration.** The only workflow is a manual deploy.
-   The `pull_request` trigger is commented out. Nothing runs on a pull request
-   and nothing runs on a push. **You are the gate.**
-2. **There are no tests.** `pnpm test` finds zero specs. The one end-to-end test
-   asserts a route that the app does not declare, so it cannot pass.
+1. **No build, no type check and no test runs on a pull request.** The only
+   workflow in the repository is a manual deploy, and its `pull_request` trigger
+   is commented out. CodeQL runs through GitHub default setup, which is why no
+   file for it exists here, and it is the only automatic check. It reads for
+   vulnerable patterns and it never builds the project. **You are the gate.**
+2. **There are no tests.** `pnpm test` finds zero specs. Three check scripts
+   cover the paths that matter most, and two of them need a live database.
 3. **The deployed service is public at the network layer and protected by a
    shared-secret guard.** Every request must send `x-api-key`. The process
    refuses to start without `WINTER_API_KEY`.
@@ -76,27 +78,34 @@ docker compose up --build
 pnpm docs-lint          # prose check, scoped
 ```
 
-**The type check is the only working automatic signal in this repository.** It
-passes clean on `main`. Run it and report exactly what it printed.
+**The type check and the lint are the working automatic signals.** Both pass
+clean. Run them and report exactly what they printed. There are still no tests.
 
-**`pnpm lint` is a check-only command.** ESLint 10 uses `eslint.config.mjs`.
-Seven lint packages are direct development dependencies. Five provide the flat
-configuration imports.
+**`pnpm lint` is a check-only command and it passes.** ESLint 10 uses
+`eslint.config.mjs`. Seven lint packages are direct development dependencies.
+Five provide the flat configuration imports. `no-unused-vars` honors a leading
+underscore, so a parameter an interface forces on an unused body stays named
+`_args`.
 
-**`pnpm test` finds no tests** and exits 1. Never write that tests pass. The one
-file under `test/` asserts `GET /` returns `Hello World!`, and `AppController`
-declares no routes, so it cannot pass. It also needs a live database, a mnemonic,
-and a Blockfrost key to reach the assertion.
+**`pnpm test` finds no tests** and exits 1. Never write that tests pass. The
+`test/` directory is gone, along with the one file that asserted `GET /` returns
+`Hello World!` against a controller that declares no routes.
+
+**Three check scripts stand in for the missing tests.** `check:recreate-alignment`
+runs offline. `check:reconcile-exhausted` and `check:reconciler` need a live
+database and a Blockfrost key, and each takes a confirmed transaction hash as its
+first argument. Each one fails when the logic it covers is reverted, so treat a
+pass as meaningful and never weaken one to make it green.
 
 CAUTION: `pnpm lint:fix` carries `--fix` and rewrites files. Run `pnpm lint`
 for check-only inspection.
 
-CAUTION: `pnpm format` covers `src/` and `test/` only. It does not touch `docs/`
-or the root configuration files.
+CAUTION: `pnpm format` covers `src/` only. It does not touch `docs/` or the root
+configuration files.
 
 **A new dependency can fail to install for a reason that looks unrelated.**
 `pnpm-workspace.yaml` sets a seven-day quarantine on newly published versions.
-The `@meshsdk/*` packages are the only exception.
+The `@zengate/*` and `@meshsdk/*` packages are the only exceptions.
 
 ## Facts you must hold while you edit
 
@@ -281,9 +290,6 @@ build or the deploy. Leave them alone.
   workaround. A static import breaks the build.
 - **The misspelled UTxO service file name is load-bearing.** The builder imports
   the misspelled path. Rename it only together with its importer.
-- **`AppService.getHello` and the one end-to-end test are template leftovers.**
-  The test asserts a route that the controller does not declare. Its failure is
-  not a regression.
 - **Two of the four dependency overrides have no recorded reason.** The Mesh
   override is load-bearing, because the library pins a different build and two
   copies break every `instanceof` check. The `undici` pin caps the major version
