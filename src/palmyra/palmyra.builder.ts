@@ -324,7 +324,6 @@ async function getWalletUtxosWithRetry(
 ): Promise<UTxO[]> {
   const utxoService = new UtxoService();
   let lastError: Error | undefined;
-  let finalUtxos: UTxO[] = [];
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -332,8 +331,9 @@ async function getWalletUtxosWithRetry(
       const addresses = [
         ...new Set(walletUtxos.map((utxo) => utxo.output.address)),
       ];
-      finalUtxos = await utxoService.getAllUtxos(walletUtxos, addresses);
-      return finalUtxos;
+      // `return await` on purpose: the await must sit inside the try so a
+      // rejection is caught and retried rather than escaping to the caller.
+      return await utxoService.getAllUtxos(walletUtxos, addresses);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       logger.error(

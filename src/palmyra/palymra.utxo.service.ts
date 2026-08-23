@@ -80,7 +80,10 @@ export class UtxoService {
   async getAllUtxos(utxos: UTxO[], addresses: string[]): Promise<UTxO[]> {
     const mempool = await this.flushMempool();
     const unconfirmedInputs = await this.getUnconfirmedInputs(mempool);
-    const unconfirmedOutputs = await this.getUnconfirmedOutputs(addresses, mempool);
+    const unconfirmedOutputs = await this.getUnconfirmedOutputs(
+      addresses,
+      mempool,
+    );
 
     const isSpent = (utxo: UTxO): boolean =>
       unconfirmedInputs.some(

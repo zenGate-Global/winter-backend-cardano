@@ -18,6 +18,13 @@ export default tseslint.config(
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
+      // A leading underscore is the convention for a parameter a callback
+      // signature forces on us and the body does not read, so honor it rather
+      // than make callers rename an interface-mandated argument.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'all', caughtErrorsIgnorePattern: '^_' },
+      ],
     },
   },
 );

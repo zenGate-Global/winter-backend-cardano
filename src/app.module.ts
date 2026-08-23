@@ -69,7 +69,7 @@ import { ApiKeyGuard } from './api-key.guard';
     LoggerModule.forRoot({
       pinoHttp: {
         redact: { paths: ['req.headers["x-api-key"]'], censor: '[redacted]' },
-        customProps: (req, res) => ({
+        customProps: () => ({
           context: 'HTTP',
         }),
         transport: {

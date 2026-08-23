@@ -28,7 +28,6 @@ export class TransactionsService {
     return this.txRepository.findOneBy({ txid });
   }
 
-
   async findRecreated(
     txHash: string,
     outputIndex: number,
@@ -92,5 +91,4 @@ export class TransactionsService {
     tx.spent = updateTransactionDto.spent;
     await this.entityManager.save(tx);
   }
-
 }

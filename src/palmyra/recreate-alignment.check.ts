@@ -27,7 +27,11 @@ const fetchedUtxos: UTxO[] = [
   makeUtxo('b'.repeat(64), 0),
 ];
 
-const aligned = alignRecreateDataReferences(requestUtxos, newDataReferences, fetchedUtxos);
+const aligned = alignRecreateDataReferences(
+  requestUtxos,
+  newDataReferences,
+  fetchedUtxos,
+);
 
 // expected mapping: a#0->dataA0, b#0->dataB0, a#1->dataA1
 // but aligned order is a#0, a#1, b#0 => [hexA0, hexA1, hexB0]
@@ -37,7 +41,11 @@ const expectedAligned = [
   Buffer.from('dataB0', 'utf8').toString('hex'),
 ];
 
-assert.deepEqual(aligned, expectedAligned, 'aligned references must follow fetched order with caller pairing');
+assert.deepEqual(
+  aligned,
+  expectedAligned,
+  'aligned references must follow fetched order with caller pairing',
+);
 assert.equal(aligned.length, 3);
 
 // Missing key should throw named error

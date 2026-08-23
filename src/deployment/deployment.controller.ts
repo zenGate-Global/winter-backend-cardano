@@ -1,10 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { DeploymentService } from './deployment.service';
 import { Deployment } from './entities/deployment.entity';
 import { DeploymentResponseDto } from './dto/deployment-response.dto';
@@ -59,5 +54,4 @@ export class DeploymentController {
       },
     };
   }
-
 }

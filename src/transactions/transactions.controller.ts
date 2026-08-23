@@ -61,5 +61,4 @@ export class TransactionsController {
     }
     return [res];
   }
-
 }

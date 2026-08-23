@@ -1,6 +1,5 @@
 import {
   BadGatewayException,
-  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -138,7 +137,9 @@ export class PalmyraService {
     if (check.status === CheckStatus.PENDING) {
       await this.queue.enqueue(kind, data);
     }
-    this.logger.log(`idempotent replay for ${data.id}, returning the existing job`);
+    this.logger.log(
+      `idempotent replay for ${data.id}, returning the existing job`,
+    );
     return true;
   }
 
@@ -225,7 +226,10 @@ export class PalmyraService {
 
       const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
       if (
-        await this.alreadyAccepted('recreate-commodity', jobArgumentsWithUtxoRef)
+        await this.alreadyAccepted(
+          'recreate-commodity',
+          jobArgumentsWithUtxoRef,
+        )
       ) {
         return;
       }

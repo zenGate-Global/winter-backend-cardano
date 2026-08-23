@@ -77,7 +77,6 @@ export class PalmyraConsumerService {
     );
   }
 
-
   private isAmbiguousSubmitError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message : String(error);
     const statusMatch = msg.match(/"status"\s*:\s*(\d{3})/);

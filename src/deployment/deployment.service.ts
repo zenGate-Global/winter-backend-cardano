@@ -43,12 +43,10 @@ export class DeploymentService {
     return deployment;
   }
 
-
   async deploymentExistsByContractAddress(
     contractAddress: string,
   ): Promise<boolean> {
     const count = await this.deploymentRepository.countBy({ contractAddress });
     return count > 0;
   }
-
 }

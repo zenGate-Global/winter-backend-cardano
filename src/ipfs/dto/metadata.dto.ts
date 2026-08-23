@@ -201,7 +201,6 @@ class Destination {
   destination: SourceDestID;
 }
 
-
 class SensorMetadata {
   @IsOptional()
   @IsISO8601({

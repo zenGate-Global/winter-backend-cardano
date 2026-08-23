@@ -1,4 +1,3 @@
-
 export interface spendCommodityJob {
   id: string;
   utxos: UtxoQuery[];
@@ -19,15 +18,12 @@ export interface tokenizeCommodityJob {
   metadataReference: string;
 }
 
-
 export interface deployRefCommodityJob {
   id: string;
   tokenName: string;
   deployAddress: string;
   utxoRef: UtxoQuery;
 }
-
-
 
 export interface recreateCommodity {
   utxos: UtxoQuery[];
