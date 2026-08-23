@@ -1,5 +1,9 @@
 minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
+  # First-party packages are published by our own CI with provenance from a
+  # reviewed pull request, so the quarantine that guards against a compromised
+  # third-party publish does not apply to them.
+  - '@zengate/*'
   - '@meshsdk/*'
 
 packages:

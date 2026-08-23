@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateRecreateTransactionDto } from './dto/update-recreate-transaction.dto';
 import { EntityManager, Repository } from 'typeorm';
@@ -18,8 +18,10 @@ export class TransactionsService {
     await this.entityManager.save(tx);
   }
 
-  async findAll() {
-    return this.txRepository.find();
+  async findAll(limit = 50, offset = 0) {
+    const take = Math.min(Math.max(limit, 1), 200);
+    const skip = Math.max(offset, 0);
+    return this.txRepository.find({ take, skip });
   }
 
   async findOne(txid: string) {
@@ -64,7 +66,7 @@ export class TransactionsService {
       tx = await this.findRecreated(txid, outputIndex);
     }
     if (!tx) {
-      throw new Error(
+      throw new NotFoundException(
         `Transaction with txid ${txid} and outputIndex ${outputIndex} not found.`,
       );
     }
@@ -82,15 +84,11 @@ export class TransactionsService {
       tx = await this.findRecreated(txid, outputIndex);
     }
     if (!tx) {
-      throw new Error(
+      throw new NotFoundException(
         `Transaction with txid ${txid} and outputIndex ${outputIndex} not found.`,
       );
     }
     tx.spent = updateTransactionDto.spent;
     await this.entityManager.save(tx);
-  }
-
-  async remove(txid: string) {
-    await this.txRepository.delete(txid);
   }
 }

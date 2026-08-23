@@ -29,9 +29,8 @@ The Winter protocol will store the CID in the datum of the UTxO and mint a corre
 Once the NFT is minted and the traceability data has been tokenized, it is possible with the current implementation to update the data reference, if needed. A potential use case for this would be in case of an error made in the off-chain data. Future implementations may restrict this functionality due to the potential of unwanted data tampering.
 
 In order to update the off-chain data, the new data must be uploaded to IPFS again. This will produce a new CID.
-
-However, instead of minting a new NFT, the same NFT will be used, but transferred to a new UTxO. This ensures that the on-chain data reference does not change, making it useful if other protocols or smart-contracts are explicitly using the idenfitier.
+However, instead of minting a new NFT, the same NFT will be used, but transferred to a new UTxO. This updates the on-chain data reference to the new CID while keeping the same token identifier.
 
 ## Delete
 
-Once traceability data is no longer needed, it is possible to also delete the on-chain reference. This is done by simply spending the UTxO, this will burn the NFT, thus effectively deleting the reference from the blockchain.
+Once traceability data is no longer needed, it is possible to also delete the on-chain reference. This is done by spending the UTxO, which burns the NFT and removes the spendable reference. The transaction history remains on chain.

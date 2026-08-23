@@ -1,4 +1,9 @@
+// This file documents the EPCIS payload shape for POST /ipfs and does not
+// currently enforce it. The controller body is a union that erases to Object
+// so the global ValidationPipe skips it, and several examples use legacy names.
+// Keep the file honest for future enablement but do not activate validation here.
 import {
+  IsArray,
   IsNotEmpty,
   ValidateNested,
   IsOptional,
@@ -7,7 +12,6 @@ import {
   IsNumber,
   IsBoolean,
   IsISO8601,
-  IsDataURI,
 } from 'class-validator';
 import { IsEventTimeZoneOffset } from './epcis_validators/isEventTimeZoneOffset';
 
@@ -109,7 +113,7 @@ type PartyID = string;
 type SourceDestID = PartyID;
 type ErrorReasonID = string;
 type SensorPropertyTypeID = string;
-type MircroorganismID = string;
+type MicroorganismID = string;
 type ChemicalSubstanceID = string;
 type ResourceID = string;
 type EPC = string;
@@ -146,6 +150,7 @@ class ErrorDeclaration {
   reason: ErrorReasonID;
 
   @IsOptional()
+  @IsArray()
   @IsString({
     each: true,
   })
@@ -153,13 +158,13 @@ class ErrorDeclaration {
 }
 
 class PersistentDisposition {
-  @IsNotEmpty()
+  @IsArray()
   @IsString({
     each: true,
   })
   set: DispositionID[];
 
-  @IsNotEmpty()
+  @IsArray()
   @IsString({
     each: true,
   })
@@ -182,7 +187,7 @@ class Source {
   type: SourceDestTypeID;
 
   @IsNotEmpty()
-  @ValidateNested()
+  @IsString()
   source: SourceDestID;
 }
 
@@ -192,7 +197,7 @@ class Destination {
   type: SourceDestTypeID;
 
   @IsNotEmpty()
-  @ValidateNested()
+  @IsString()
   destination: SourceDestID;
 }
 
@@ -204,14 +209,12 @@ class SensorMetadata {
   })
   time: DateTimeStamp;
 
-  @IsNotEmpty()
   @IsOptional()
   @IsISO8601({
     strict: true,
     strictSeparator: true,
   })
   startTime: DateTimeStamp;
-
   @IsOptional()
   @IsString()
   @IsISO8601({
@@ -273,9 +276,9 @@ class SensorReport {
   })
   time: string;
 
+  @IsOptional()
   @IsString()
-  mircroorganism: MircroorganismID;
-
+  microorganism: MicroorganismID;
   @IsOptional()
   @IsString()
   chemicalSubstance: ChemicalSubstanceID;
@@ -343,7 +346,8 @@ class SensorElement {
   @ValidateNested()
   sensorMetadata: SensorMetadata;
 
-  @IsNotEmpty()
+  @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sensorReport: SensorReport[];
 }
@@ -399,15 +403,16 @@ export class Event {
 
 export class ObjectEvent extends Event {
   @IsOptional()
+  @IsArray()
   @IsString({
     each: true,
   })
   epcList: EPC[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   quantityList: QuantityElement[];
-
   //@IsNotEmpty()
   @IsOptional()
   @IsString()
@@ -435,14 +440,17 @@ export class ObjectEvent extends Event {
   bizLocation: BusinessLocationID;
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   bizTransactionList: BusinessTransaction[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sourceList: Source[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   destinationList: Destination[];
 
@@ -450,6 +458,7 @@ export class ObjectEvent extends Event {
   ilmd: ILMD;
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sensorElementList: SensorElement[];
 }
@@ -460,13 +469,14 @@ export class AggregationEvent extends Event {
   parentID: EPC;
 
   @IsOptional()
+  @IsArray()
   @IsString({ each: true })
   childEPCs: EPC[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   childQuantityList: QuantityElement[];
-
   //@IsNotEmpty()
   @IsOptional()
   @IsString()
@@ -490,42 +500,46 @@ export class AggregationEvent extends Event {
   bizLocation: BusinessLocationID;
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   bizTransactionList: BusinessTransaction[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sourceList: Source[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   destinationList: Destination[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sensorElementList: SensorElement[];
 }
 
 export class TransactionEvent extends Event {
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   bizTransactionList: BusinessTransaction[];
 
   @IsOptional()
   @IsString()
-  @IsDataURI()
   parentID: URI;
-
   @IsOptional()
+  @IsArray()
   @IsString({
     each: true,
   })
   epcList: EPC[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   quantityList: QuantityElement[];
-
   //@IsNotEmpty()
   @IsOptional()
   @IsString()
@@ -549,43 +563,49 @@ export class TransactionEvent extends Event {
   bizLocation: BusinessLocationID;
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sourceList: Source[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   destinationList: Destination[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sensorElementList: SensorElement[];
 }
 
 export class TransformationEvent extends Event {
   @IsOptional()
+  @IsArray()
   @IsString({
     each: true,
   })
   inputEPCList: EPC[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   inputQuantityList: QuantityElement[];
 
   @IsOptional()
+  @IsArray()
   @IsString({
     each: true,
   })
   outputEPCList: EPC[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   outputQuantityList: QuantityElement[];
 
   @IsOptional()
   @IsString()
-  transormationID: TransformationID;
-
+  transformationID: TransformationID;
   @IsOptional()
   @IsString()
   bizStep: BusinessStepID;
@@ -607,14 +627,17 @@ export class TransformationEvent extends Event {
   bizLocation: BusinessLocationID;
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   bizTransactionList: BusinessTransaction[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sourceList: Source[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   destinationList: Destination[];
 
@@ -622,6 +645,7 @@ export class TransformationEvent extends Event {
   ilmd: ILMD;
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sensorElementList: SensorElement[];
 }
@@ -632,13 +656,13 @@ export class AssociationEvent extends Event {
   parentID: URI;
 
   @IsOptional()
+  @IsArray()
   @IsString({ each: true })
-  childItems: EPC[];
-
+  childEPCs: EPC[];
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   childQuantityList: QuantityElement[];
-
   //@IsNotEmpty()
   @IsOptional()
   @IsString()
@@ -662,18 +686,22 @@ export class AssociationEvent extends Event {
   bizLocation: BusinessLocationID;
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   bizTransactionList: BusinessTransaction[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sourceList: Source[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   destinationList: Destination[];
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   sensorElementList: SensorElement[];
 }

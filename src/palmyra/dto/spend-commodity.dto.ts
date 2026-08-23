@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayNotEmpty,
   IsArray,
   IsHexadecimal,
   IsInt,
@@ -7,6 +9,7 @@ import {
   IsString,
   Length,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 export class UtxoDto {
@@ -16,7 +19,7 @@ export class UtxoDto {
   })
   @IsNotEmpty()
   @IsString()
-  @Length(62, 62)
+  @Length(64, 64)
   @IsHexadecimal()
   txHash: string;
   @ApiProperty({
@@ -35,6 +38,9 @@ export class SpendCommodityDto {
     isArray: true,
   })
   @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => UtxoDto)
   utxos: UtxoDto[];
 }
 

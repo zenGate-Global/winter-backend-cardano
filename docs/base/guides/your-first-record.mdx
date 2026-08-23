@@ -95,11 +95,10 @@ Send this to the `/palmyra/tokenizeCommodity` endpoint in the body as JSON. The 
 This ID confirms the tokenization request is queued.
 
 ## Step 3: Check the Token Status and Verify on Blockchain
-
 Track progress with the `/check` GET endpoint: `/check/{id}`, swapping in your ID.
 
-The response shows status like "queued," "minted," or "failed." Once minted, you can verify on the blockchain.
+The response status is one of `PENDING` (waiting in queue), `QUEUED` (building and submitting), `SUCCESS` (submitted), or `ERROR`. `SUCCESS` means the transaction was submitted, not yet confirmed on chain. Once submitted, you can verify on the blockchain.
 
-To verify, use a Cardano Preview explorer like [preview.cardanoscan.io](https://preview.cardanoscan.io). Plug in the transaction hash and confirm your token is live on the blockchain, timestamped forever.
+To verify, use a Cardano preview explorer like [preview.cardanoscan.io](https://preview.cardanoscan.io). Plug in the transaction hash and confirm your token is live on the blockchain. Confirm a few blocks before you treat the output as final.
 
 That's it. You've tokenized your first record. Winter Protocol's flexibility means you can adapt this for apps, from asset tracking to data provenance.

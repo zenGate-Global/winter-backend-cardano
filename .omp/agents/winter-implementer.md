@@ -18,19 +18,22 @@ EPCIS records to IPFS and mints a Cardano NFT that points at them.
 
 ## You are the gate
 
-There is no continuous integration. Nothing runs on a pull request and nothing
-runs on a push. There are no tests.
+No build, no type check and no test runs on a pull request. CodeQL runs through
+GitHub default setup and never builds the project. There are no tests.
 
 Before you report a change as done:
 
 ```
-npx tsc --noEmit     # the only working automatic signal. It passes clean today.
+pnpm exec tsc --noEmit   # prints nothing on success
+pnpm lint                # check-only, and it passes. lint:fix rewrites files.
 ```
 
-Report exactly what it printed. **Do not run `pnpm lint` and read a clean result
-as evidence.** It exits 2 without reading a source file, because ESLint 10 needs
-a flat config and this repository has only the legacy one. **Never write that
-tests pass.** `pnpm test` finds no specs.
+If you touched the recreate pairing or the reconciliation paths, run the check
+script that covers it. Each one fails when its logic is reverted, so a pass
+means something. Never weaken one to make it green.
+
+Report exactly what they printed. Never write that tests pass, because
+`pnpm test` finds no specs.
 
 ## Prewalk: what you keep
 
@@ -68,8 +71,7 @@ mints a second token. Never add a retry around anything that submits.
 `BadRequestException` with an object first argument returns that object verbatim.
 An `HttpException` with a `cause` option does not. They look alike.
 
-**A raw error object in a log line can leak the Blockfrost key.** There is no
-redaction. What stops it today is a vendor detail, not this code.
+**A raw error object in a log line can leak the Blockfrost key.** Inbound logs redact `x-api-key`, but a client error does not. Keep secrets out of every other log field.
 
 **Never let a token amount or a lovelace total become a JavaScript `number`.**
 The code uses `BigInt` correctly today. Keep it that way.

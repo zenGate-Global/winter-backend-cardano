@@ -6,7 +6,7 @@ order: 0
 
 # Trace Events
 
-The Winter Protocol supports various trace events for capturing different stages and operations in a supply chain or traceability system.
+The Winter Protocol defines five trace event types. An error declaration is an optional field on an event, not a sixth type. Use the error declaration field to correct a previous event.
 
 <CardList>
   <CardItem
@@ -48,7 +48,7 @@ The Winter Protocol supports various trace events for capturing different stages
     icon="AlertTriangle"
     iconColor="text-red-500"
     title="Error Declaration"
-    content="Correct previous events determined to be errors"
+    content="Optional field to mark a previous event as erroneous (not a separate event type)"
     url="./error-declaration"
   />
 </CardList>

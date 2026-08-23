@@ -63,11 +63,13 @@ When invoked:
 
 Traps worth checking before you report:
 
-- **There is no continuous integration and there are no tests.** Never describe
-  anything as covered or verified.
-- **A decorator on a DTO does not mean it runs.** Only a controller `@Body()`
-  parameter passes the global pipe, and nested array elements are skipped
-  without an explicit type. Say which decorators actually execute.
+- **No build, no type check and no test runs on a pull request, and there are no
+  tests.** Three check scripts cover the recreate pairing and the reconciliation
+  paths. Never describe anything else as covered or verified.
+- **A decorator on a DTO runs only where the pipe reaches it.** A controller
+  `@Body()` parameter passes the global pipe, and a nested array element needs
+  an explicit type. The palmyra UTxO arrays now carry one. Say which decorators
+  actually execute.
 - **A `POST` builds and signs a transaction before it answers**, then discards
   it and enqueues. The consumer rebuilds from scratch.
 - `PENDING` means waiting in the queue. `QUEUED` means actively submitting.

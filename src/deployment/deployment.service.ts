@@ -19,9 +19,13 @@ export class DeploymentService {
     return await this.entityManager.save(deployment);
   }
 
-  async getAllDeployments(): Promise<Deployment[]> {
+  async getAllDeployments(limit = 50, offset = 0): Promise<Deployment[]> {
+    const take = Math.min(Math.max(limit, 1), 200);
+    const skip = Math.max(offset, 0);
     return await this.deploymentRepository.find({
       order: { createdAt: 'DESC' },
+      take,
+      skip,
     });
   }
 
@@ -39,42 +43,10 @@ export class DeploymentService {
     return deployment;
   }
 
-  async getUtxoReferenceByContractAddress(
-    contractAddress: string,
-  ): Promise<{ txHash: string; outputIndex: number }> {
-    const deployment =
-      await this.getDeploymentByContractAddress(contractAddress);
-    return {
-      txHash: deployment.deploymentTxHash,
-      outputIndex: deployment.deploymentOutputIndex,
-    };
-  }
-
   async deploymentExistsByContractAddress(
     contractAddress: string,
   ): Promise<boolean> {
     const count = await this.deploymentRepository.countBy({ contractAddress });
     return count > 0;
-  }
-
-  async updateDeploymentByContractAddress(
-    contractAddress: string,
-    updateData: Partial<CreateDeploymentDto>,
-  ): Promise<Deployment> {
-    const deployment =
-      await this.getDeploymentByContractAddress(contractAddress);
-    Object.assign(deployment, updateData);
-    return await this.entityManager.save(deployment);
-  }
-
-  async deleteDeploymentByContractAddress(
-    contractAddress: string,
-  ): Promise<void> {
-    const result = await this.deploymentRepository.delete({ contractAddress });
-    if (result.affected === 0) {
-      throw new NotFoundException(
-        `Deployment not found for contract address: ${contractAddress}`,
-      );
-    }
   }
 }

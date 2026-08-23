@@ -1,6 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
-import { UtxoQuery } from '../../types/job.dto';
 import { ApiProperty, getSchemaPath } from '@nestjs/swagger';
+import { Exclude } from 'class-transformer';
 import { TokenizeCommodityDto } from '../../palmyra/dto/tokenize-commodity.dto';
 import { RecreateCommodityDto } from '../../palmyra/dto/recreate-commodity.dto';
 
@@ -35,19 +35,19 @@ export class Check {
   type: CheckType;
 
   @ApiProperty({
-    description: 'status',
+    description:
+      'status: PENDING means waiting in the pg-boss queue, QUEUED means the consumer is actively building and submitting',
     enum: CheckStatus,
     example: CheckStatus.SUCCESS,
   })
   @Column('text', { nullable: true })
   status: CheckStatus;
-
   @ApiProperty({
     description: 'error',
     example: null,
   })
   @Column('text', { nullable: true })
-  error: string;
+  error: string | null;
 
   @ApiProperty({
     description: 'txid',
@@ -55,6 +55,10 @@ export class Check {
   })
   @Column('text', { nullable: true })
   txid: string;
+
+  @Exclude()
+  @Column('text', { nullable: true })
+  signedTx: string | null;
 
   @ApiProperty({
     description:

@@ -16,17 +16,19 @@ The default branch is `main`. **The repository is public.**
 Three facts shape every decision here, and none of them is visible from a single
 file.
 
-1. **There is no continuous integration.** The only workflow is a manual deploy.
-   The `pull_request` trigger is commented out. Nothing runs on a pull request
-   and nothing runs on a push. **You are the gate.**
-2. **There are no tests.** `pnpm test` finds zero specs. The one end-to-end test
-   asserts a route that the app does not declare, so it cannot pass.
-3. **The deployed service is public and unauthenticated.** The deploy grants
-   `roles/run.invoker` to `allUsers`, and CORS allows every origin. There is no
-   guard, no API key, and no rate limit on any route.
+1. **No build, no type check and no test runs on a pull request.** The only
+   workflow in the repository is a manual deploy, and its `pull_request` trigger
+   is commented out. CodeQL runs through GitHub default setup, which is why no
+   file for it exists here, and it is the only automatic check. It reads for
+   vulnerable patterns and it never builds the project. **You are the gate.**
+2. **There are no tests.** `pnpm test` finds zero specs. Three check scripts
+   cover the paths that matter most, and two of them need a live database.
+3. **The deployed service is public at the network layer and protected by a
+   shared-secret guard.** Every request must send `x-api-key`. The process
+   refuses to start without `WINTER_API_KEY`.
 
-Points 1 and 3 together mean an unreviewed change reaches a public endpoint that
-spends from a funded wallet.
+Points 1 and 3 mean an unreviewed change reaches a public service that spends
+from a funded wallet.
 
 ## Documentation map
 
@@ -40,8 +42,8 @@ changes a public page. There is no index, so use this table.
 | [`docs/base/guides/`](docs/base/guides/) | how it works, glossary, first record | mostly current |
 | [`docs/base/changelog/`](docs/base/changelog/) | release notes | stale by omission |
 | [`docs/versions/v1.0.0/setup/`](docs/versions/v1.0.0/setup/) | setup, environment, Bruno | `environment.mdx` is current |
-| [`docs/versions/v1.0.0/deployment/`](docs/versions/v1.0.0/deployment/) | local, Google Cloud, cost | `google-cloud.mdx` is badly stale |
-| [`docs/versions/v1.0.0/best-practices/`](docs/versions/v1.0.0/best-practices/) | operations advice | heavily stale |
+| [`docs/versions/v1.0.0/deployment/`](docs/versions/v1.0.0/deployment/) | local, Google Cloud, cost | current |
+| [`docs/versions/v1.0.0/best-practices/`](docs/versions/v1.0.0/best-practices/) | operations advice | current |
 | [`docs/versions/v1.0.0/faqs/`](docs/versions/v1.0.0/faqs/) | questions | current |
 | [`docs/versions/v1.0.0/templates/`](docs/versions/v1.0.0/templates/) | metadata examples | wrong format |
 | [`docs/versions/v1.0.0/API-Playground/`](docs/versions/v1.0.0/API-Playground/) | the OpenAPI file | hand-written, and it drifts |
@@ -51,20 +53,8 @@ changes a public page. There is no index, so use this table.
 An agent that reads `docs/` for context will reason confidently about systems
 that do not exist. Check each of these against the source before you use it.
 
-- **Every mention of Redis.** The queue moved to pg-boss in `9c7dfcd`. Four
-  documents still tell an operator to provision Memorystore, to back up Redis,
-  and to watch Redis connectivity.
-- **Every mention of Maestro or NFT.Storage.** The real providers are Blockfrost
-  and Pinata.
 - **The three metadata templates.** They show a pre-EPCIS shape that a later
   change replaced. The Bruno collection holds the correct shape.
-- **The status values in the first-record guide.** It names `queued`, `minted`,
-  and `failed`. The real enum is `PENDING`, `QUEUED`, `SUCCESS`, and `ERROR`.
-- **The `POSTGRES_SYNC=false` rule in best practices.** The deploy sets it to
-  `true` for every environment, including production.
-- **The `waitForTx` advice in best practices.** No such call exists here. The
-  service marks a job `SUCCESS` immediately after it submits, with no wait for a
-  confirmation.
 
 ### Two vocabularies that look like one
 
@@ -79,38 +69,43 @@ protocol documentation gives it its own page. Keep the two vocabularies apart.
 ## Commands
 
 ```sh
-corepack enable         # pnpm is pinned. npm and yarn will refuse to install.
+corepack enable         # pnpm is pinned through packageManager.
 pnpm install --frozen-lockfile
-npx tsc --noEmit        # THE GATE. It passes clean today.
+pnpm exec tsc --noEmit  # THE GATE. It prints nothing on success.
 pnpm build              # nest build
 pnpm start:dev          # watch mode
 docker compose up --build
 pnpm docs-lint          # prose check, scoped
 ```
 
-**The type check is the only working automatic signal in this repository.** It
-passes clean on `main`. Run it and report exactly what it printed.
+**The type check and the lint are the working automatic signals.** Both pass
+clean. Run them and report exactly what they printed. There are still no tests.
 
-**`pnpm lint` does not lint.** ESLint 10 needs a flat `eslint.config.*` file,
-and this repository has only the legacy `.eslintrc.js`. The command exits 2
-before it reads one source file. Zero errors and zero warnings mean nothing here.
-The `eslint-disable` comment in the queue consumer stopped working at the ESLint
-bump. Six lint packages are installed and all of them are dead weight.
+**`pnpm lint` is a check-only command and it passes.** ESLint 10 uses
+`eslint.config.mjs`. Seven lint packages are direct development dependencies.
+Five provide the flat configuration imports. `no-unused-vars` honors a leading
+underscore, so a parameter an interface forces on an unused body stays named
+`_args`.
 
-**`pnpm test` finds no tests** and exits 1. Never write that tests pass. The one
-file under `test/` asserts `GET /` returns `Hello World!`, and `AppController`
-declares no routes, so it cannot pass. It also needs a live database, a mnemonic,
-and a Blockfrost key to reach the assertion.
+**`pnpm test` finds no tests** and exits 1. Never write that tests pass. The
+`test/` directory is gone, along with the one file that asserted `GET /` returns
+`Hello World!` against a controller that declares no routes.
 
-CAUTION: `pnpm lint` carries `--fix`, so it will rewrite files if the config is
-ever repaired. Use check-only mode when you only want to look.
+**Three check scripts stand in for the missing tests.** `check:recreate-alignment`
+runs offline. `check:reconcile-exhausted` and `check:reconciler` need a live
+database and a Blockfrost key, and each takes a confirmed transaction hash as its
+first argument. Each one fails when the logic it covers is reverted, so treat a
+pass as meaningful and never weaken one to make it green.
 
-CAUTION: `pnpm format` covers `src/` and `test/` only. It does not touch `docs/`
-or the root configuration files.
+CAUTION: `pnpm lint:fix` carries `--fix` and rewrites files. Run `pnpm lint`
+for check-only inspection.
+
+CAUTION: `pnpm format` covers `src/` only. It does not touch `docs/` or the root
+configuration files.
 
 **A new dependency can fail to install for a reason that looks unrelated.**
 `pnpm-workspace.yaml` sets a seven-day quarantine on newly published versions.
-The `@meshsdk/*` packages are the only exception.
+The `@zengate/*` and `@meshsdk/*` packages are the only exceptions.
 
 ## Facts you must hold while you edit
 
@@ -123,6 +118,15 @@ The `@meshsdk/*` packages are the only exception.
   `@zengate/winter-cardano-mesh` are pinned to exact versions, and a pnpm
   override forces the winter library onto the same Mesh build. Bumping one of
   the three alone will desync the peer graph.
+- **Mesh `1.9.1` mis-prices a funding input that carries a script.** The
+  builder records the script size on the input and leaves
+  `minFeeRefScriptCostPerByte` out of the fee, so the node rejects the
+  transaction with `FeeTooSmallUTxO`. One preview mint fell short by 65911
+  lovelace, which is the 4402 byte script at 15 lovelace a byte. The defect is
+  narrow. A **reference** input is priced correctly, so recreate and spend are
+  not affected. `getFundingUtxos` removes the one case that triggers it, and
+  mint, recreate, a two-UTxO recreate and spend all pass on `1.9.1` on the
+  preview network. `beta.104` and `1.9.0` price the funding input correctly.
 - **The queue is one queue with a singleton policy and a local concurrency of
   one.** That is a correctness constraint, not a performance setting. It is the
   only thing that stops two builds from selecting the same wallet UTxOs.
@@ -133,101 +137,131 @@ The `@meshsdk/*` packages are the only exception.
   Editing an entity file mutates the production schema on the next deploy, with
   no review and no rollback. Turning the flag off is not a safe hardening step,
   because nothing else creates the tables.
-- **A `POST` builds and signs a transaction before it answers.** The request
-  path runs a full dry run, then discards it and enqueues. The consumer rebuilds
-  from scratch. A `200` means it built once, not that it will succeed.
+- **A `POST` builds a transaction before it answers.** The request path runs a
+  dry run and enqueues the job. The consumer signs and submits.
 - **`SUCCESS` means submitted, not confirmed.** Nothing waits for a block.
+- **A submitted job is idempotent.** The service stores the transaction hash
+  and signed CBOR in `Check.txid` and the nullable `Check.signedTx` column before
+  submission. A retry resubmits those bytes and must never rebuild.
+- **Queue status names are inverted.** `PENDING` waits in pg-boss. `QUEUED`
+  means that the consumer actively builds and submits. Both are non-terminal.
 - **`src/palmyra/palymra.utxo.service.ts` is misspelled on purpose now.** The
   builder imports the misspelled path. Rename it only together with its importer.
-- **Configuration is read three ways:** through `ConfigService`, through the
-  thunks in `src/constants.ts`, and through bare `process.env`. There is no
-  validated schema and no startup check, so a missing variable crashes with a
-  type error rather than a readable message.
+- **Configuration has a startup check.** It names missing required variables,
+  validates the network, and never logs a key.
+- **The container starts `node dist/main`.** It uses the compiled output and
+  does not compile during a cold start.
+- **Yaci devnet covers mint, recreate, and commodity details.** Use a URL-shaped
+  `BLOCKFROST_KEY` for its Blockfrost-compatible API. Yaci cannot verify spend
+  or mempool chaining.
 
 ## Known defects
 
-These are real, unfixed, and verified against the source. Do not report them as
-new, and do not copy the patterns. This repository is public, so this section
-records rules and invariants. Report a working attack in chat, not here.
+These rules and remaining defects are verified against the source. Do not
+report them as new, and do not copy defective patterns. This repository is
+public, so record rules and invariants here. Report a working attack in chat.
 
 ### Chain correctness
 
-- **A retry re-builds and re-submits, so it can mint twice.** The consumer
-  retries on a heuristic: the returned hash is not a string, or it holds the
-  text `bad request`. A rebuild picks different wallet inputs, so a second,
-  distinct token can appear with the same name. A correct fix submits once, then
-  verifies by hash.
-- **`recreateCommodity` can pair a data reference with the wrong UTxO.** The
-  library groups the input references by transaction hash and returns them in
-  its own order. The builder then pairs by index. Both length guards still pass,
-  because the count is right. The result is wrong data written into an on-chain
-  datum, with no error at any layer. It bites when the caller does not sort the
-  array first.
+- **A submitted transaction must never be rebuilt.** A retry resubmits the
+  stored signed CBOR, which preserves the transaction hash and asset identity.
+- **A multi-UTxO recreate needs `@zengate/winter-cardano-mesh` 2.0.1 or later.**
+  Before that the library called `requiredSignerHash` inside its per-event loop,
+  so N events put the same key hash N times into the `required_signers` CBOR
+  set. Conway enforces set uniqueness and the node rejected every such
+  transaction. The backend carried a hex splice to remove the duplicates. That
+  splice is deleted, and a two-UTxO recreate is proven on the preview network.
+- **`recreateCommodity` aligns data references by UTxO identity, not position.**
+  2.0.1 returns the fetched UTxOs in the order the caller asked for, so a
+  positional pair is correct today. `alignRecreateDataReferences` stays because
+  it is invariant to that contract. A wrong pair still builds, still submits and
+  still succeeds, and it writes one commodity data reference into another
+  commodity datum, where nothing can undo it.
+- **A reference-script output must never fund a transaction.**
+  `DEPLOYER_ADDRESS` is the service wallet, so the deployed reference script
+  lands in the funding UTxO set, and Mesh coin selection spends it. Every later
+  recreate and spend then fails with `BadInputsUTxO` until an operator deletes
+  the deployment row and pays about 20 ADA again. `getFundingUtxos` drops any
+  UTxO that carries `scriptRef` or `scriptHash`. This is a guard, not a cure.
+  The cure is a deployer address that the service does not fund from.
 - **Nothing reserves a UTxO.** The queue policy is the only guard. The design
-  chains each job onto the previous unconfirmed change output, and the mempool
-  view behind it is unpaginated and does not filter its own outputs against its
-  own inputs.
-- **The two-ADA balance check is a false green light.** A real build needs
-  collateral, a fee output, and minimum ADA. The check also counts token-bearing
-  UTxOs, while collateral selection needs pure ADA.
-- **One retry loop can never end.** The wallet UTxO loop increments its counter
-  only on the success branch, so a persistent Blockfrost failure spins forever.
-  The job never resolves, and the queue expiry then re-dispatches it.
+  chains each job onto the previous unconfirmed change output. `mempoolAll`
+  auto-paginates, but it sees only Blockfrost submissions. Selection must filter
+  pending outputs that another pending transaction spends.
+- **A fixed ADA balance gate cannot prove a build will work.** Mesh performs
+  coin selection and checks collateral for the actual transaction.
+- **The wallet UTxO retry loop is bounded.** Every failed fetch increments the
+  counter and delays the next attempt.
+- **Every parser and evaluator call must receive the UTxOs the caller already
+  holds.** `TxParser.parse` and the evaluator both re-resolve every input,
+  collateral and reference outref through Blockfrost, and Blockfrost knows only
+  confirmed transactions. Without the second argument a build that chains onto
+  an unconfirmed change output fails, even though the build itself succeeded.
+  That capped mint throughput at the number of confirmed wallet UTxOs.
+- **Throughput is bounded by the count of confirmed pure-ADA wallet UTxOs.**
+  Each mint consumes one and returns change that is unconfirmed for one block.
+  A burst deeper than that count is rejected at the request path with 502, or
+  it waits for the pg-boss retry. Keep the wallet split into many UTxOs.
+- **A failure before a transaction reaches the network must return to the
+  queue.** Nothing was submitted, so a retry cannot double spend or double
+  mint. The queue worker marks the row ERROR only on the final attempt.
+  Measured on the preview network, a 40-deep burst settles every enqueued job.
+- **A row that says ERROR while holding a transaction hash is not trusted.**
+  The hash is written before the submit, so such a row can describe a
+  transaction that reached the chain. Three layers settle it: the retry
+  resubmits the stored bytes and looks the hash up, the final attempt looks the
+  hash up before it writes ERROR, and `PalmyraReconcilerService` sweeps on an
+  interval for anything the first two missed because the provider was down.
+  A promotion to SUCCESS is idempotent, so two instances sweeping is harmless.
+  `RECONCILE_INTERVAL_SECONDS` defaults to 300 and 0 switches the sweep off.
+  The sweep runs in process, so a service scaled to zero reconciles nothing
+  until a request wakes it.
+- **The sweep marks a row after it looks it up.** `check` carries no timestamp,
+  so the marker is the only bound on rework. An absent transaction is looked up
+  twice, spaced by the interval, and then written off with `[chain-checked]`.
+  Never widen the candidate query to include a marked row.
+- **Success must be recorded before any bookkeeping that follows a submit.**
+  A deployment write or a parse that fails after `submitTx` returns must never
+  turn a submitted transaction into ERROR. A caller polls for SUCCESS, and an
+  ERROR on a landed mint makes it retry and mint a second token. Ten rows in
+  one test run held a transaction that was on chain while the row said ERROR.
+- **An evaluator must be wired into `EventFactory`.** Without one every
+  redeemer declares the fixed default budget of mem 7,000,000. Two of those
+  reach the preview cap of 17,500,000, so a two-commodity spend and a
+  three-commodity recreate are both rejected with `ExUnitsTooBigUTxO`. Measured
+  on chain, the real cost is 17 to 56 times smaller than the default.
 
 ### Configuration
 
-- **Nothing checks `NETWORK` against `BLOCKFROST_KEY`.** They are two unlinked
-  sources of truth. `NETWORK` decides key derivation, the fee address, and the
-  contract address. The Blockfrost key prefix decides which chain is queried and
-  submitted to. A mismatch attempts a real submission against the wrong chain.
-  Nothing writes the resolved network into a startup log line.
 - **`--min-instances` is 0 for production.** The queue worker runs in process.
   When the service scales to zero, queued jobs stop moving until an unrelated
   request wakes an instance.
-- **`.dockerignore` does not exclude `.env`.** The line carries a trailing
-  comment, and Docker does not strip one, so the pattern matches nothing. A local
-  `docker build` copies `.env` into the image. Continuous integration is safe,
-  because `.env` is absent there.
-- **The deploy bakes its own cloud credential into every published image.** The
-  authentication step writes a credentials file into the workspace, the build
-  context is the workspace, and `COPY . .` copies it. Neither ignore file names
-  the pattern. The file holds the identity provider name, the service account,
-  and a short-lived bearer token. Adding the pattern to both ignore files is the
-  whole fix.
-- **The container runs the development start command.** It deletes the built
-  output and recompiles the whole project on every cold start.
 
 ### API and validation
 
-- **Validation is off, by design in one place and by accident in two.** The
-  upload body is typed as a union, which erases to `Object`, so the global pipe
-  skips it and the whole metadata file is dead at run time. The UTxO arrays carry
-  no element type, so their decorators never run. **A partial fix breaks live
-  callers**, because the UTxO hash length is declared as 62 and a real hash is
-  64.
-- **The 32-byte token name limit exists in no code.** A character count is not a
-  byte count, so the obvious fix is also wrong.
-- **Several handlers put raw upstream error text into the response body.** A
-  `BadRequestException` with an object first argument returns that object
-  verbatim. An `HttpException` with a `cause` option does not. The two look alike
-  and behave in opposite ways.
-- **`GET /check`, `GET /transactions`, and `GET /deployments` are unpaginated
-  full-table dumps**, and the check rows hold stringified internal errors.
-- **`status = ERROR` with a valid transaction id means the transaction
-  succeeded.** Several paths write `SUCCESS` and the hash, then fail a later
-  database write and overwrite the status. The hash survives.
+- **Validation differs by route.** Nested UTxO arrays and token identifiers are
+  validated. The upload body remains a union that erases to `Object`, so the
+  global pipe skips EPCIS payload validation.
+- **The UTxO hash decorator requires 64 characters.** The former 62-character
+  rule was safe to correct before nested validation because it did not run on
+  array elements.
+- **The 32-byte token name limit exists downstream and at the API boundary.**
+  `@meshsdk/common` enforces the ledger limit. The DTO reports an early error.
+- **Handlers return stable error messages.** They retain raw upstream details
+  only as error causes for server logs.
+- **`GET /check`, `GET /transactions`, and `GET /deployments` paginate.** Keep
+  bounded page sizes on all three routes.
+- **A later database error must not overwrite `SUCCESS`.** A valid transaction
+  id means submitted, not confirmed.
 
 ### Logging
 
-- **There is no redaction.** The logger has no `redact` option and no custom
-  serializer. Every inbound request header is logged verbatim.
-- **A raw error object logged from a direct HTTP client will leak the Blockfrost
-  key.** Nothing in this repository stops it. What stops it today is that the
-  vendor rethrows a string rather than the original error. That is a vendor
-  detail in a beta dependency, not a guarantee.
-- **The mint path logs the full signed transaction at info level**, twice per
-  request. Several bare `console.log` calls bypass the logger and dump wallet
-  UTxOs and unsigned transactions.
+- **Inbound request logs redact `x-api-key`.** Keep secrets out of every other
+  log field.
+- **A raw direct HTTP client error can leak the Blockfrost key.** The redaction
+  covers the inbound API key header, not provider request configuration.
+- **The mint path does not log signed transactions.** Do not log wallet UTxOs,
+  unsigned transactions, signed CBOR, or raw transaction objects.
 - **`pino-pretty` is the transport in every environment**, so the log platform
   cannot read the severity and alerting on level does not work.
 
@@ -256,9 +290,6 @@ build or the deploy. Leave them alone.
   workaround. A static import breaks the build.
 - **The misspelled UTxO service file name is load-bearing.** The builder imports
   the misspelled path. Rename it only together with its importer.
-- **`AppService.getHello` and the one end-to-end test are template leftovers.**
-  The test asserts a route that the controller does not declare. Its failure is
-  not a regression.
 - **Two of the four dependency overrides have no recorded reason.** The Mesh
   override is load-bearing, because the library pins a different build and two
   copies break every `instanceof` check. The `undici` pin caps the major version
@@ -287,6 +318,13 @@ contract, not an implementation detail.
 - `metadataReference` arrives as a **bare CID with no `ipfs://` prefix**, even
   though a guide says the prefix is required. Code that starts to require the
   prefix will break production.
+- **The optional `Idempotency-Key` request header.** A caller that sends one
+  gets the same job for every repeat of that key on that route, so a retry of a
+  request whose response was lost cannot mint a second token. A caller that
+  sends nothing behaves exactly as before, so this is additive. The key is
+  scoped per route, holds 255 characters or fewer, and a longer one returns 400.
+  Three layers enforce it: the derived job id, the `check` primary key, and the
+  pg-boss job id. Six simultaneous repeats return one id and mint one token.
 
 Ask before you change any of the three.
 
@@ -298,10 +336,10 @@ New prose follows ASD-STE100 Simplified Technical English. `pnpm docs-lint` runs
 **No tooling enforces this on a pull request, because this repository has no
 continuous integration.** Run the check yourself.
 
-**The scope is deliberate.** It covers `AGENTS.md`, `CLAUDE.md`, and the prose
-under `.omp/`. It does **not** cover `README.md` or `docs/`, which publish to an
-external site and carry a different voice. Widen the scope only as a deliberate
-pass.
+**The scope is deliberate.** It covers these four path groups: `AGENTS.md`,
+`CLAUDE.md`, `.omp/RULES.md`, and `.omp/agents` plus `.omp/commands` and the
+top-level `.omp/AGENTS.md`. It does not cover `README.md`, `docs/`, or
+`.omp/skills/`.
 
 Tier one rules:
 

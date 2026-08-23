@@ -20,9 +20,11 @@ We will now explain each variable in the environment file.
 
 `DEPLOYER_ADDRESS`: The address that holds the reference script utxo/ The reference script utxo is a read-only input, which is added during transaction building so the entire smart-contract does not need to be attached to the transaction. This design pattern enabled a significant reduction in transaction fees, thus it is important that this utxo is never spent.
 
-`PINATA_JWT`: [Pinata]() is used for submitting data to IPFS. Make an account to obtain a valid API key.
+`PINATA_JWT`: [Pinata](https://pinata.cloud) is used for submitting data to IPFS. Make an account to obtain a valid API key.
 
-`NEXT_PUBLIC_GATEWAY_URL`: This is used along with the `PINATA_JWT` to create a PinataSDK object. We need this public gateway url because the data is being made publically available on IPFS.
+`NEXT_PUBLIC_GATEWAY_URL`: This is used along with the `PINATA_JWT` to create a PinataSDK object. We need this public gateway url because the data is being made publicly available on IPFS.
+
+`WINTER_API_KEY`: Shared secret for the backend. Every request must send it as `x-api-key`. The process refuses to start without it.
 
 `POSTGRES_HOST`: The database is used for storing information used by the application as it processes requests for building and submitting transactions to the Cardano blockchain. This value should be left as `db` because we are running the application within a Docker container.
 
@@ -36,7 +38,7 @@ We will now explain each variable in the environment file.
 
 `POSTGRES_PASSWORD`: This can be set to any valid value you want.
 
-`POSTGRES_SYNC`: This can be set to `TRUE` | `FALSE`.
+`POSTGRES_SYNC`: Keep `TRUE`. The service creates tables with synchronize and has no migrations.
 
 `POSTGRES_LOGGING`: This can be set to `TRUE` | `FALSE`.
 
@@ -44,4 +46,4 @@ We will now explain each variable in the environment file.
 
 `PGBOSS_POOL_MAX`: Optional pg-boss Postgres connection pool size. This can be left as `2`.
 
-`PORT`: A valid port value for where the application will listen to incoming API requests.
+`PORT`: The application listens on `4000` by default. Compose maps `4000:4000`. Set this only if you change the compose mapping.

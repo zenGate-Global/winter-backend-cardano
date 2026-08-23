@@ -48,20 +48,18 @@ the same Mesh build. Never reason about one of the three alone.
   token and returns the ADA.** The IPFS document survives a spend. Only the
   anchor stops existing.
 - **`getUtxosByOutRef` returns its own order**, grouped by transaction hash. The
-  builder pairs data references by index. That mismatch corrupts an on-chain
-  datum with no error. Always check the caller's array order.
-- **Nothing reserves a UTxO.** The queue policy is the only serialization. The
-  design chains onto unconfirmed change outputs, and the mempool view is
-  unpaginated.
-- **The two-ADA balance check does not prove a build will work.** Collateral
-  needs pure-ADA UTxOs, and a recreate or a spend also pays a one-ADA fee output.
+  builder maps each returned outref to the caller's data reference with its
+  `txHash#outputIndex` key.
+- **Nothing reserves a UTxO.** The queue policy is the only serialization. The design chains onto unconfirmed change outputs, and the mempool view auto-paginates but sees only Blockfrost submissions.
+- **Recreate and spend have no two-ADA balance check.** Each build still
+  requires pure-ADA collateral and pays a one-ADA fee output.
 - **The fee amount is a script parameter**, so a change to it changes the
   contract address.
 - **A reference-script UTxO must never be spent.** The deployment table keys it
   by contract address. A failed auto-deploy is logged and swallowed, and later
   calls then build without a reference script.
-- **`NETWORK` and the Blockfrost key prefix are two unlinked sources of truth.**
-  Say which one governs the behavior you are asked about.
+- **Startup validation links `NETWORK` to the Blockfrost key prefix.** The
+  process refuses to boot on a mismatch and logs the resolved network name.
 
 ## How to answer
 

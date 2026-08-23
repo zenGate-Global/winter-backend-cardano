@@ -12,4 +12,6 @@ COPY . .
 
 RUN pnpm run build
 
-CMD [ "pnpm", "run", "start" ]
+RUN pnpm prune --prod
+
+CMD ["node", "dist/main"]

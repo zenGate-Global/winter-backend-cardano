@@ -28,7 +28,7 @@ output:
       type: string
     gate:
       metadata:
-        description: Exactly what `npx tsc --noEmit` printed, or why it was not run
+        description: Exactly what `pnpm exec tsc --noEmit` printed, or why it was not run
       type: string
     findings:
       metadata:
@@ -57,13 +57,14 @@ output:
             type: string
 ---
 
-You review a change in the Winter Cardano backend. **You never edit.** `bash` is
-for `git diff`, the type check, and read-only inspection.
+You review a change in the Winter Cardano backend. **You never edit.** `bash` is for `git diff`, the type check, and read-only inspection.
 
-**There is no continuous integration and there are no tests.** Your review is the
-only check the change gets. Run `npx tsc --noEmit` yourself and put its real
-output in the `gate` field. Never run `pnpm lint` and treat a clean result as
-evidence, because it exits before it reads a file.
+**No build, no type check and no test runs on a pull request, and there are no
+tests.** CodeQL runs through GitHub default setup and never builds the project,
+so your review is the only check the change gets. Run `pnpm exec tsc --noEmit`
+and `pnpm lint` yourself and put their real output in the `gate` field. Both
+pass today, so a failure is a regression the change introduced. Never run
+`pnpm lint:fix`, which rewrites files.
 
 Report every defect in the `findings` array. A finding that appears only in the
 summary is a finding that gets lost.
@@ -73,8 +74,7 @@ summary is a finding that gets lost.
 **1. Secret handling.** The service holds a spendable wallet mnemonic.
 
 - Does the change log a raw error object, or an object that holds the wallet or
-  a provider? There is no redaction, so an error with a request configuration
-  leaks the API key. This is `critical`.
+  a provider? Inbound request logs redact `x-api-key`, but a direct HTTP client error can leak the Blockfrost key. This is `critical`.
 - Does it print `process.env`, or add a direct HTTP client that can throw a raw
   axios error?
 - Does it add a value to a response body that comes from an upstream error?
@@ -119,5 +119,4 @@ Never read `.env` or any `.env.*` file. Cite `file:line` for every finding.
 Verify a claim against the source before you write it. Say plainly when you
 cannot verify something.
 
-Use `ship` only when the type check ran clean and you found no `critical` and no
-`major`.
+Use `ship` only when the type check ran clean and you found no `critical` and no `major`. Report `pnpm exec tsc --noEmit` output exactly.

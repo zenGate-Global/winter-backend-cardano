@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { IsByteLength, IsString } from 'class-validator';
 import { SpendCommodityResponseDto } from './spend-commodity.dto';
 
 export class TokenizeCommodityDto {
@@ -8,6 +8,7 @@ export class TokenizeCommodityDto {
     example: 'coffee tracking singleton',
   })
   @IsString()
+  @IsByteLength(0, 32)
   tokenName: string;
 
   @ApiProperty({
