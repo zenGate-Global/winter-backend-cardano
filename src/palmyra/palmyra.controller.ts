@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PalmyraService } from './palmyra.service';
 import {
+  deriveRequestFingerprint,
   IDEMPOTENCY_KEY_MAX_LENGTH,
   IdempotencyScope,
   resolveJobId,
@@ -96,11 +97,17 @@ export class PalmyraController {
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<SpendCommodityResponseDto> {
     const id = this.jobId('spend-commodity', idempotencyKey);
-    await this.palmyraService.dispatchSpendCommodity({
-      id,
-      utxos: message.utxos,
-      utxoRef: {},
-    });
+    const requestFingerprint = idempotencyKey?.trim()
+      ? deriveRequestFingerprint(message)
+      : null;
+    await this.palmyraService.dispatchSpendCommodity(
+      {
+        id,
+        utxos: message.utxos,
+        utxoRef: {},
+      },
+      requestFingerprint,
+    );
     return { message: 'success', id };
   }
 
@@ -118,11 +125,17 @@ export class PalmyraController {
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<{ message: string; id: string }> {
     const id = this.jobId('tokenize-commodity', idempotencyKey);
-    await this.palmyraService.dispatchTokenizeCommodity({
-      id,
-      tokenName: message.tokenName,
-      metadataReference: message.metadataReference,
-    });
+    const requestFingerprint = idempotencyKey?.trim()
+      ? deriveRequestFingerprint(message)
+      : null;
+    await this.palmyraService.dispatchTokenizeCommodity(
+      {
+        id,
+        tokenName: message.tokenName,
+        metadataReference: message.metadataReference,
+      },
+      requestFingerprint,
+    );
     return { message: 'success', id };
   }
 
@@ -148,12 +161,18 @@ export class PalmyraController {
       );
     }
     const id = this.jobId('recreate-commodity', idempotencyKey);
-    await this.palmyraService.dispatchRecreateCommodity({
-      id,
-      utxos: message.utxos,
-      newDataReferences: message.newDataReferences,
-      utxoRef: {},
-    });
+    const requestFingerprint = idempotencyKey?.trim()
+      ? deriveRequestFingerprint(message)
+      : null;
+    await this.palmyraService.dispatchRecreateCommodity(
+      {
+        id,
+        utxos: message.utxos,
+        newDataReferences: message.newDataReferences,
+        utxoRef: {},
+      },
+      requestFingerprint,
+    );
     return { message: 'success', id };
   }
 }

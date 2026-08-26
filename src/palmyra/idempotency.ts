@@ -24,6 +24,32 @@ export type IdempotencyScope =
 // this only stops an unbounded header from reaching the digest.
 export const IDEMPOTENCY_KEY_MAX_LENGTH = 255;
 
+function stableStringify(value: object): string {
+  const serialized = JSON.stringify(value, (_key, nestedValue) => {
+    if (
+      nestedValue === null ||
+      typeof nestedValue !== 'object' ||
+      Array.isArray(nestedValue)
+    ) {
+      return nestedValue;
+    }
+    const object = nestedValue as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(object)
+        .sort()
+        .map((key) => [key, object[key]]),
+    );
+  });
+  if (serialized === undefined) {
+    throw new TypeError('Request body must be serializable');
+  }
+  return serialized;
+}
+
+export function deriveRequestFingerprint(body: object): string {
+  return createHash('sha256').update(stableStringify(body)).digest('hex');
+}
+
 export function deriveJobId(scope: IdempotencyScope, key: string): string {
   const digest = createHash('sha256')
     .update(`${NAMESPACE}\u0000${scope}\u0000${key}`)

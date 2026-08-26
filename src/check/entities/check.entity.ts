@@ -58,6 +58,10 @@ export class Check {
 
   @Exclude()
   @Column('text', { nullable: true })
+  requestFingerprint: string | null;
+
+  @Exclude()
+  @Column('text', { nullable: true })
   signedTx: string | null;
 
   @ApiProperty({

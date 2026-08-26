@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { CheckType, CheckStatus } from '../entities/check.entity';
 import { recreateCommodity, tokenizeCommodity } from '../../types/job.dto';
 
@@ -35,4 +35,8 @@ export class CreateCheckDto {
   })
   @IsOptional()
   additionalInfo?: tokenizeCommodity | recreateCommodity;
+
+  @IsOptional()
+  @IsString()
+  requestFingerprint?: string | null;
 }

@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -15,7 +16,11 @@ import { buildMint, buildRecreate, buildSpend } from './palmyra.builder.js';
 import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service.js';
 import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
-import { CheckStatus, CheckType } from '../check/entities/check.entity.js';
+import {
+  Check,
+  CheckStatus,
+  CheckType,
+} from '../check/entities/check.entity.js';
 import { BLOCKFROST_KEY, NETWORK, ZENGATE_MNEMONIC } from 'src/constants';
 import { DeploymentService } from '../deployment/deployment.service.js';
 import { PalmyraQueueService } from './palmyra-queue.service.js';
@@ -123,17 +128,41 @@ export class PalmyraService {
     return utxoRef;
   }
 
+  private async findExistingCheck(id: string): Promise<Check | null> {
+    if (!(await this.checkDb.exists(id))) {
+      return null;
+    }
+    return await this.checkDb.findOne(id);
+  }
+
+  private assertMatchingFingerprint(
+    check: Check,
+    incomingFingerprint: string | null,
+  ): void {
+    if (
+      check.requestFingerprint != null &&
+      incomingFingerprint != null &&
+      check.requestFingerprint !== incomingFingerprint
+    ) {
+      throw new ConflictException(
+        'Idempotency-Key already used for a different request body',
+      );
+    }
+  }
+
   // A repeat of a request that carried the same `Idempotency-Key` resolves to
   // the same job identifier. A PENDING row can have no pg-boss job if the
   // process stopped after the row insert, so send its deterministic job again.
   private async alreadyAccepted<K extends TxQueueJobKind>(
     kind: K,
     data: TxQueueJobData<K>,
+    incomingFingerprint: string | null,
   ): Promise<boolean> {
-    if (!(await this.checkDb.exists(data.id))) {
+    const check = await this.findExistingCheck(data.id);
+    if (!check) {
       return false;
     }
-    const check = await this.checkDb.findOne(data.id);
+    this.assertMatchingFingerprint(check, incomingFingerprint);
     if (check.status === CheckStatus.PENDING) {
       await this.queue.enqueue(kind, data);
     }
@@ -143,8 +172,22 @@ export class PalmyraService {
     return true;
   }
 
-  async dispatchSpendCommodity(jobArguments: spendCommodityJob) {
+  async dispatchSpendCommodity(
+    jobArguments: spendCommodityJob,
+    requestFingerprint: string | null,
+  ) {
     try {
+      const existing = await this.findExistingCheck(jobArguments.id);
+      if (existing) {
+        this.assertMatchingFingerprint(existing, requestFingerprint);
+        if (existing.status !== CheckStatus.PENDING) {
+          this.logger.log(
+            `idempotent replay for ${jobArguments.id}, returning the existing job`,
+          );
+          return;
+        }
+      }
+
       const utxoPromises = jobArguments.utxos.map((utxo) =>
         this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
       );
@@ -160,11 +203,14 @@ export class PalmyraService {
 
       const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
       if (
-        await this.alreadyAccepted('spend-commodity', jobArgumentsWithUtxoRef)
+        await this.alreadyAccepted(
+          'spend-commodity',
+          jobArgumentsWithUtxoRef,
+          requestFingerprint,
+        )
       ) {
         return;
       }
-
       await buildSpend(this.factory, { data: jobArgumentsWithUtxoRef }, false);
       await this.createCheckAndEnqueue(
         'spend-commodity',
@@ -173,9 +219,13 @@ export class PalmyraService {
           id: jobArgumentsWithUtxoRef.id,
           type: CheckType.SPEND,
           status: CheckStatus.PENDING,
+          requestFingerprint,
         },
       );
     } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
       this.logger.error(
         `Spend Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -185,8 +235,17 @@ export class PalmyraService {
     }
   }
 
-  async dispatchTokenizeCommodity(jobArguments: tokenizeCommodityJob) {
-    if (await this.alreadyAccepted('tokenize-commodity', jobArguments)) {
+  async dispatchTokenizeCommodity(
+    jobArguments: tokenizeCommodityJob,
+    requestFingerprint: string | null,
+  ) {
+    if (
+      await this.alreadyAccepted(
+        'tokenize-commodity',
+        jobArguments,
+        requestFingerprint,
+      )
+    ) {
       return;
     }
     try {
@@ -199,8 +258,12 @@ export class PalmyraService {
           tokenName: jobArguments.tokenName,
           metadataReference: jobArguments.metadataReference,
         },
+        requestFingerprint,
       });
     } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
       this.logger.error(
         `Mint Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -209,8 +272,23 @@ export class PalmyraService {
       });
     }
   }
-  async dispatchRecreateCommodity(jobArguments: recreateCommodityJob) {
+
+  async dispatchRecreateCommodity(
+    jobArguments: recreateCommodityJob,
+    requestFingerprint: string | null,
+  ) {
     try {
+      const existing = await this.findExistingCheck(jobArguments.id);
+      if (existing) {
+        this.assertMatchingFingerprint(existing, requestFingerprint);
+        if (existing.status !== CheckStatus.PENDING) {
+          this.logger.log(
+            `idempotent replay for ${jobArguments.id}, returning the existing job`,
+          );
+          return;
+        }
+      }
+
       const utxoPromises = jobArguments.utxos.map((utxo) =>
         this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
       );
@@ -229,6 +307,7 @@ export class PalmyraService {
         await this.alreadyAccepted(
           'recreate-commodity',
           jobArgumentsWithUtxoRef,
+          requestFingerprint,
         )
       ) {
         return;
@@ -250,9 +329,13 @@ export class PalmyraService {
             newDataReferences: jobArgumentsWithUtxoRef.newDataReferences,
             utxoRef: jobArgumentsWithUtxoRef.utxoRef,
           },
+          requestFingerprint,
         },
       );
     } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
       this.logger.error(
         `Recreate Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -274,6 +357,26 @@ export class PalmyraService {
       // pre-check, so the primary key is the real serialization point. A
       // conflict means the other request already accepted this job.
       if (this.isDuplicateKey(error)) {
+        let existing: Check | null;
+        try {
+          existing = await this.findExistingCheck(data.id);
+        } catch (lookupError) {
+          throw new InternalServerErrorException('Check lookup failed', {
+            cause: lookupError,
+          });
+        }
+        if (!existing) {
+          throw new InternalServerErrorException('Check lookup failed', {
+            cause: error,
+          });
+        }
+        this.assertMatchingFingerprint(
+          existing,
+          check.requestFingerprint ?? null,
+        );
+        if (existing.status === CheckStatus.PENDING) {
+          await this.queue.enqueue(kind, data);
+        }
         this.logger.log(
           `idempotent replay for ${data.id} lost the insert race, returning the existing job`,
         );
