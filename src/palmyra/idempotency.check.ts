@@ -1,935 +1,431 @@
 import assert from 'node:assert/strict';
-import { ConflictException } from '@nestjs/common';
+import {
+  ConflictException,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import { CheckStatus } from '../check/entities/check.entity.js';
 import { deriveRequestFingerprint } from './idempotency.js';
 import { PalmyraService } from './palmyra.service.js';
-import { CheckStatus } from '../check/entities/check.entity.js';
-
-function makeService(overrides: {
+type CheckRow = {
+  id: string;
+  requestFingerprint: string | null;
+  status: CheckStatus;
+};
+type JobData = {
+  id: string;
+  utxos?: { txHash: string; outputIndex: number }[];
+  newDataReferences?: string[];
+  utxoRef?: unknown;
+};
+type PrivateServiceAccess = {
+  logger: unknown;
   checkDb: unknown;
   queue: unknown;
-  provider?: unknown;
-  deploymentService?: unknown;
-}): PalmyraService {
-  const svc = Object.create(PalmyraService.prototype) as PalmyraService;
-  (svc as unknown as Record<string, unknown>).logger = {
-    log: () => {},
-    error: () => {},
-    warn: () => {},
+  provider: unknown;
+  deploymentService: unknown;
+  alreadyAccepted: (
+    kind: string,
+    data: JobData,
+    fp: string | null,
+  ) => Promise<boolean>;
+  createCheckAndEnqueue: (
+    kind: string,
+    data: JobData,
+    check: CheckRow,
+  ) => Promise<void>;
+  dispatchSpendCommodity: (data: JobData, fp: string | null) => Promise<void>;
+  dispatchRecreateCommodity: (
+    data: JobData,
+    fp: string | null,
+  ) => Promise<void>;
+};
+function checkRow(
+  status = CheckStatus.PENDING,
+  requestFingerprint: string | null = null,
+  id = 'job',
+): CheckRow {
+  return { id, requestFingerprint, status };
+}
+function fakeCheckDb({
+  existing = null,
+  exists = existing !== null,
+  createError,
+  lookupError,
+}: {
+  existing?: CheckRow | null;
+  exists?: boolean;
+  createError?: unknown;
+  lookupError?: Error;
+} = {}) {
+  return {
+    exists: async () => exists,
+    findOne: async () => {
+      if (lookupError) throw lookupError;
+      return existing;
+    },
+    create: async () => {
+      if (createError) throw createError;
+    },
+    update: async () => {},
   };
-  (svc as unknown as Record<string, unknown>).checkDb = overrides.checkDb;
-  (svc as unknown as Record<string, unknown>).queue = overrides.queue;
-  (svc as unknown as Record<string, unknown>).provider = overrides.provider ?? {
-    fetchUTxOs: async () => {
-      throw new Error('provider.fetchUTxOs must not be called in this path');
+}
+function fakeQueue() {
+  const calls: { kind: string; data: JobData }[] = [];
+  return {
+    calls,
+    queue: {
+      enqueue: async (kind: string, data: JobData) => {
+        calls.push({ kind, data });
+      },
     },
   };
-  (svc as unknown as Record<string, unknown>).deploymentService =
-    overrides.deploymentService ?? {
-      getDeploymentByContractAddress: async () => {
-        throw new Error(
-          'deploymentService.getDeploymentByContractAddress must not be called in this path',
-        );
-      },
-    };
-  return svc;
 }
-
-async function main(): Promise<void> {
-  const bodyA = { b: 2, a: 1, c: { y: 2, x: 1 } };
-  const bodyB = { a: 1, c: { x: 1, y: 2 }, b: 2 };
-  const fpA = deriveRequestFingerprint(bodyA);
-  const fpB = deriveRequestFingerprint(bodyB);
+function fakeChainServices(outputIndex = 5) {
+  const providerCalls: [string, number][] = [];
+  const deploymentCalls: string[] = [];
+  return {
+    providerCalls,
+    deploymentCalls,
+    provider: {
+      fetchUTxOs: async (txHash: string, index: number) => {
+        providerCalls.push([txHash, index]);
+        return [{ output: { address: 'addr_test1xyz' } }];
+      },
+    },
+    deploymentService: {
+      getDeploymentByContractAddress: async (address: string) => {
+        deploymentCalls.push(address);
+        return {
+          deploymentTxHash: 'deplHash',
+          deploymentOutputIndex: outputIndex,
+        };
+      },
+    },
+  };
+}
+function makeService({
+  checkDb = fakeCheckDb(),
+  queue = fakeQueue().queue,
+  provider,
+  deploymentService,
+}: {
+  checkDb?: unknown;
+  queue?: unknown;
+  provider?: unknown;
+  deploymentService?: unknown;
+} = {}): PrivateServiceAccess {
+  const service = Object.create(
+    PalmyraService.prototype,
+  ) as PrivateServiceAccess;
+  service.logger = { log: () => {}, error: () => {}, warn: () => {} };
+  service.checkDb = checkDb;
+  service.queue = queue;
+  service.provider =
+    provider ??
+    ({
+      fetchUTxOs: async () => {
+        throw new Error('provider must not be called');
+      },
+    } as object);
+  service.deploymentService =
+    deploymentService ??
+    ({
+      getDeploymentByContractAddress: async () => {
+        throw new Error('deployment service must not be called');
+      },
+    } as object);
+  return service;
+}
+async function assertConflict(
+  action: () => Promise<unknown>,
+  message: string,
+): Promise<void> {
+  await assert.rejects(action, (error: unknown) => {
+    assert.ok(error instanceof ConflictException, `${message} must conflict`);
+    assert.equal(
+      (error as ConflictException).getStatus(),
+      409,
+      `${message} must return 409`,
+    );
+    return true;
+  });
+}
+function duplicateError(driver = false): Error {
+  return driver
+    ? Object.assign(new Error('duplicate'), { driverError: { code: '23505' } })
+    : Object.assign(new Error('duplicate'), { code: '23505' });
+}
+async function checkFingerprints(): Promise<void> {
+  const canonical = deriveRequestFingerprint({ b: 2, a: 1, c: { y: 2, x: 1 } });
   assert.equal(
-    fpA,
-    fpB,
-    'same body with different key order must hash the same',
+    canonical,
+    deriveRequestFingerprint({ a: 1, c: { x: 1, y: 2 }, b: 2 }),
+    'object key order must not change the fingerprint',
   );
-
-  const bodyC = { b: 2, a: 2, c: { y: 2, x: 1 } };
   assert.notEqual(
-    deriveRequestFingerprint(bodyC),
-    fpA,
-    'a changed field must hash differently',
+    canonical,
+    deriveRequestFingerprint({ b: 2, a: 2, c: { y: 2, x: 1 } }),
+    'a changed field must change the fingerprint',
   );
-
-  const arr1 = { arr: [1, 2, 3] };
-  const arr2 = { arr: [3, 2, 1] };
   assert.notEqual(
-    deriveRequestFingerprint(arr1),
-    deriveRequestFingerprint(arr2),
+    deriveRequestFingerprint({ arr: [1, 2, 3] }),
+    deriveRequestFingerprint({ arr: [3, 2, 1] }),
     'array order must remain significant',
   );
-
-  {
-    let enqueued = 0;
-    const svc = makeService({
-      checkDb: {
-        exists: async () => false,
-        findOne: async () => {
-          throw new Error('findOne must not be called when exists is false');
-        },
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
+}
+async function checkAlreadyAccepted(): Promise<void> {
+  const matching = deriveRequestFingerprint({ x: 1 });
+  const different = deriveRequestFingerprint({ x: 2 });
+  const missingQueue = fakeQueue();
+  const missing = makeService({ queue: missingQueue.queue });
+  assert.equal(
+    await missing.alreadyAccepted(
+      'tokenize-commodity',
+      { id: 'missing' },
+      matching,
+    ),
+    false,
+    'a missing check must not be accepted',
+  );
+  assert.equal(
+    missingQueue.calls.length,
+    0,
+    'a missing check must not enqueue',
+  );
+  const cases = [
+    ['matching PENDING', CheckStatus.PENDING, matching, matching, 1, false],
+    ['matching SUCCESS', CheckStatus.SUCCESS, matching, matching, 0, false],
+    ['mismatched PENDING', CheckStatus.PENDING, matching, different, 0, true],
+    ['legacy null PENDING', CheckStatus.PENDING, null, different, 1, false],
+    ['legacy null SUCCESS', CheckStatus.SUCCESS, null, different, 0, false],
+    ['incoming null PENDING', CheckStatus.PENDING, matching, null, 1, false],
+  ] as const;
+  for (const [name, status, stored, incoming, enqueues, conflicts] of cases) {
+    const queued = fakeQueue();
+    const service = makeService({
+      checkDb: fakeCheckDb({ existing: checkRow(status, stored) }),
+      queue: queued.queue,
     });
-    const res = await (
-      svc as unknown as {
-        alreadyAccepted: (
-          k: string,
-          d: unknown,
-          f: string | null,
-        ) => Promise<boolean>;
-      }
-    ).alreadyAccepted('tokenize-commodity', { id: 'id-missing' }, fpA);
-    assert.equal(
-      res,
+    const action = () =>
+      service.alreadyAccepted('tokenize-commodity', { id: 'job' }, incoming);
+    if (conflicts) await assertConflict(action, name);
+    else assert.equal(await action(), true, `${name} must be accepted`);
+    assert.equal(queued.calls.length, enqueues, `${name} enqueue count`);
+  }
+}
+async function checkInsertRaces(): Promise<void> {
+  const matching = deriveRequestFingerprint({ x: 1 });
+  const different = deriveRequestFingerprint({ x: 2 });
+  const cases = [
+    [
+      'matching PENDING',
+      CheckStatus.PENDING,
+      matching,
+      matching,
+      1,
       false,
-      'alreadyAccepted must return false when id does not exist',
-    );
-    assert.equal(enqueued, 0, 'missing id must not enqueue');
-  }
-
-  {
-    let enqueued = 0;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'id1',
-          requestFingerprint: fp,
-          status: CheckStatus.PENDING,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-    });
-    const res = await (
-      svc as unknown as {
-        alreadyAccepted: (
-          k: string,
-          d: unknown,
-          f: string | null,
-        ) => Promise<boolean>;
-      }
-    ).alreadyAccepted('tokenize-commodity', { id: 'id1' }, fp);
-    assert.equal(res, true, 'matching replay must return true');
-    assert.equal(enqueued, 1, 'PENDING replay must re-enqueue once');
-  }
-
-  {
-    let enqueued = 0;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'id1',
-          requestFingerprint: fp,
-          status: CheckStatus.SUCCESS,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-    });
-    const res = await (
-      svc as unknown as {
-        alreadyAccepted: (
-          k: string,
-          d: unknown,
-          f: string | null,
-        ) => Promise<boolean>;
-      }
-    ).alreadyAccepted('tokenize-commodity', { id: 'id1' }, fp);
-    assert.equal(res, true, 'matching terminal replay must return true');
-    assert.equal(enqueued, 0, 'terminal SUCCESS must not re-enqueue');
-  }
-
-  {
-    let enqueued = 0;
-    const fp1 = deriveRequestFingerprint({ x: 1 });
-    const fp2 = deriveRequestFingerprint({ x: 2 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'id1',
-          requestFingerprint: fp1,
-          status: CheckStatus.PENDING,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-    });
-    await assert.rejects(
-      async () =>
-        (
-          svc as unknown as {
-            alreadyAccepted: (
-              k: string,
-              d: unknown,
-              f: string | null,
-            ) => Promise<boolean>;
-          }
-        ).alreadyAccepted('tokenize-commodity', { id: 'id1' }, fp2),
-      (error: unknown) => {
-        assert.ok(
-          error instanceof ConflictException,
-          'mismatch must throw ConflictException',
-        );
-        assert.equal(
-          (error as ConflictException).getStatus(),
-          409,
-          'mismatch must be 409',
-        );
-        return true;
-      },
-    );
-    assert.equal(enqueued, 0, 'mismatch must not enqueue');
-  }
-
-  {
-    let enqueued = 0;
-    const svcPending = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'id1',
-          requestFingerprint: null,
-          status: CheckStatus.PENDING,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-    });
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const resPending = await (
-      svcPending as unknown as {
-        alreadyAccepted: (
-          k: string,
-          d: unknown,
-          f: string | null,
-        ) => Promise<boolean>;
-      }
-    ).alreadyAccepted('tokenize-commodity', { id: 'id1' }, fp);
-    assert.equal(resPending, true, 'legacy null fingerprint must return true');
-    assert.equal(enqueued, 1, 'legacy null PENDING must preserve re-enqueue');
-
-    let enqueued2 = 0;
-    const svcSuccess = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'id1',
-          requestFingerprint: null,
-          status: CheckStatus.SUCCESS,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued2 += 1;
-        },
-      },
-    });
-    const resSuccess = await (
-      svcSuccess as unknown as {
-        alreadyAccepted: (
-          k: string,
-          d: unknown,
-          f: string | null,
-        ) => Promise<boolean>;
-      }
-    ).alreadyAccepted(
-      'tokenize-commodity',
-      { id: 'id1' },
-      deriveRequestFingerprint({ x: 999 }),
-    );
-    assert.equal(resSuccess, true, 'legacy null SUCCESS must return true');
-    assert.equal(enqueued2, 0, 'legacy null SUCCESS must not re-enqueue');
-
-    let enqueued3 = 0;
-    const svcIncomingNull = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'id1',
-          requestFingerprint: deriveRequestFingerprint({ x: 1 }),
-          status: CheckStatus.PENDING,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued3 += 1;
-        },
-      },
-    });
-    const resIncomingNull = await (
-      svcIncomingNull as unknown as {
-        alreadyAccepted: (
-          k: string,
-          d: unknown,
-          f: string | null,
-        ) => Promise<boolean>;
-      }
-    ).alreadyAccepted('tokenize-commodity', { id: 'id1' }, null);
-    assert.equal(
-      resIncomingNull,
+      false,
+    ],
+    [
+      'matching SUCCESS',
+      CheckStatus.SUCCESS,
+      matching,
+      matching,
+      0,
+      false,
+      false,
+    ],
+    [
+      'mismatched PENDING',
+      CheckStatus.PENDING,
+      matching,
+      different,
+      0,
       true,
-      'incoming null must not conflict when stored is non-null',
-    );
-    assert.equal(enqueued3, 1, 'incoming null PENDING must re-enqueue');
-  }
-
-  {
-    let enqueued = 0;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        create: async () => {
-          const error = new Error('duplicate') as Error & { code?: string };
-          error.code = '23505';
-          throw error;
-        },
-        findOne: async () => ({
-          id: 'race1',
-          requestFingerprint: fp,
-          status: CheckStatus.PENDING,
-        }),
-        update: async () => {},
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-    });
-    await (
-      svc as unknown as {
-        createCheckAndEnqueue: (
-          k: string,
-          d: unknown,
-          c: unknown,
-        ) => Promise<void>;
-      }
-    ).createCheckAndEnqueue(
-      'tokenize-commodity',
-      { id: 'race1' },
-      { id: 'race1', requestFingerprint: fp, status: CheckStatus.PENDING },
-    );
-    assert.equal(
-      enqueued,
+      false,
+    ],
+    [
+      'legacy null PENDING',
+      CheckStatus.PENDING,
+      null,
+      different,
       1,
-      '23505 race with matching PENDING must re-enqueue',
-    );
-  }
-
-  {
-    let enqueued = 0;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        create: async () => {
-          const error = new Error('duplicate') as Error & { code?: string };
-          error.code = '23505';
-          throw error;
-        },
-        findOne: async () => ({
-          id: 'race2',
-          requestFingerprint: fp,
-          status: CheckStatus.SUCCESS,
-        }),
-        update: async () => {},
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
+      false,
+      false,
+    ],
+    [
+      'driverError PENDING',
+      CheckStatus.PENDING,
+      matching,
+      matching,
+      1,
+      false,
+      true,
+    ],
+  ] as const;
+  for (const [
+    name,
+    status,
+    stored,
+    incoming,
+    enqueues,
+    conflicts,
+    driver,
+  ] of cases) {
+    const queued = fakeQueue();
+    const service = makeService({
+      checkDb: fakeCheckDb({
+        existing: checkRow(status, stored),
+        createError: duplicateError(driver),
+      }),
+      queue: queued.queue,
     });
-    await (
-      svc as unknown as {
-        createCheckAndEnqueue: (
-          k: string,
-          d: unknown,
-          c: unknown,
-        ) => Promise<void>;
-      }
-    ).createCheckAndEnqueue(
-      'tokenize-commodity',
-      { id: 'race2' },
-      { id: 'race2', requestFingerprint: fp, status: CheckStatus.PENDING },
-    );
-    assert.equal(
-      enqueued,
-      0,
-      '23505 race with matching SUCCESS must not re-enqueue',
-    );
+    const action = () =>
+      service.createCheckAndEnqueue(
+        'tokenize-commodity',
+        { id: 'job' },
+        checkRow(CheckStatus.PENDING, incoming),
+      );
+    if (conflicts) await assertConflict(action, `23505 ${name}`);
+    else await action();
+    assert.equal(queued.calls.length, enqueues, `23505 ${name} enqueue count`);
   }
-
-  {
-    let enqueued = 0;
-    const fp1 = deriveRequestFingerprint({ x: 1 });
-    const fp2 = deriveRequestFingerprint({ x: 2 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        create: async () => {
-          const error = new Error('duplicate') as Error & { code?: string };
-          error.code = '23505';
-          throw error;
-        },
-        findOne: async () => ({
-          id: 'race3',
-          requestFingerprint: fp1,
-          status: CheckStatus.PENDING,
-        }),
-        update: async () => {},
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-    });
+  const lookupError = new Error('lookup failed');
+  for (const [name, checkDb, cause] of [
+    [
+      'lookup failure',
+      fakeCheckDb({ createError: duplicateError(), exists: true, lookupError }),
+      lookupError,
+    ],
+    [
+      'missing race row',
+      fakeCheckDb({ createError: duplicateError() }),
+      undefined,
+    ],
+  ] as const) {
+    const service = makeService({ checkDb });
     await assert.rejects(
-      async () =>
-        (
-          svc as unknown as {
-            createCheckAndEnqueue: (
-              k: string,
-              d: unknown,
-              c: unknown,
-            ) => Promise<void>;
-          }
-        ).createCheckAndEnqueue(
+      () =>
+        service.createCheckAndEnqueue(
           'tokenize-commodity',
-          { id: 'race3' },
-          { id: 'race3', requestFingerprint: fp2, status: CheckStatus.PENDING },
+          { id: 'job' },
+          checkRow(CheckStatus.PENDING, matching),
         ),
       (error: unknown) => {
         assert.ok(
-          error instanceof ConflictException,
-          '23505 mismatch must throw ConflictException',
+          error instanceof InternalServerErrorException,
+          `23505 ${name} must return an internal server error`,
         );
         assert.equal(
-          (error as ConflictException).getStatus(),
-          409,
-          '23505 mismatch must be 409',
+          (error as InternalServerErrorException).getStatus(),
+          500,
+          `23505 ${name} must return 500`,
         );
-        return true;
-      },
-    );
-    assert.equal(enqueued, 0, '23505 mismatch must not enqueue');
-  }
-
-  {
-    let enqueued = 0;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        create: async () => {
-          const error = new Error('duplicate') as Error & { code?: string };
-          error.code = '23505';
-          throw error;
-        },
-        findOne: async () => ({
-          id: 'race4',
-          requestFingerprint: null,
-          status: CheckStatus.PENDING,
-        }),
-        update: async () => {},
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-    });
-    await (
-      svc as unknown as {
-        createCheckAndEnqueue: (
-          k: string,
-          d: unknown,
-          c: unknown,
-        ) => Promise<void>;
-      }
-    ).createCheckAndEnqueue(
-      'tokenize-commodity',
-      { id: 'race4' },
-      { id: 'race4', requestFingerprint: fp, status: CheckStatus.PENDING },
-    );
-    assert.equal(enqueued, 1, '23505 legacy null PENDING must re-enqueue');
-
-    let enqueuedDriver = 0;
-    const svcDriver = makeService({
-      checkDb: {
-        exists: async () => true,
-        create: async () => {
-          const error = new Error('duplicate') as Error & {
-            driverError?: { code?: string };
-          };
-          (error as unknown as { driverError: { code: string } }).driverError =
-            { code: '23505' };
-          throw error;
-        },
-        findOne: async () => ({
-          id: 'race5',
-          requestFingerprint: fp,
-          status: CheckStatus.PENDING,
-        }),
-        update: async () => {},
-      },
-      queue: {
-        enqueue: async () => {
-          enqueuedDriver += 1;
-        },
-      },
-    });
-    await (
-      svcDriver as unknown as {
-        createCheckAndEnqueue: (
-          k: string,
-          d: unknown,
-          c: unknown,
-        ) => Promise<void>;
-      }
-    ).createCheckAndEnqueue(
-      'tokenize-commodity',
-      { id: 'race5' },
-      { id: 'race5', requestFingerprint: fp, status: CheckStatus.PENDING },
-    );
-    assert.equal(
-      enqueuedDriver,
-      1,
-      '23505 via driverError must also re-enqueue',
-    );
-  }
-  {
-    let providerCalls = 0;
-    let deploymentCalls = 0;
-    let enqueued = 0;
-    const fp1 = deriveRequestFingerprint({ x: 1 });
-    const fp2 = deriveRequestFingerprint({ x: 2 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'spend-mismatch',
-          requestFingerprint: fp1,
-          status: CheckStatus.PENDING,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-      provider: {
-        fetchUTxOs: async () => {
-          providerCalls += 1;
-          return [{ output: { address: 'addr_test1xyz' } }];
-        },
-      },
-      deploymentService: {
-        getDeploymentByContractAddress: async () => {
-          deploymentCalls += 1;
-          return {
-            deploymentTxHash: 'deplHash',
-            deploymentOutputIndex: 0,
-          };
-        },
-      },
-    });
-    await assert.rejects(
-      async () =>
-        svc.dispatchSpendCommodity(
-          {
-            id: 'spend-mismatch',
-            utxos: [{ txHash: 'abc', outputIndex: 0 }],
-            utxoRef: {},
-          },
-          fp2,
-        ),
-      (error: unknown) => {
-        assert.ok(
-          error instanceof ConflictException,
-          'spend mismatch must throw ConflictException',
-        );
-        assert.equal(
-          (error as ConflictException).getStatus(),
-          409,
-          'spend mismatch must be 409',
-        );
-        return true;
-      },
-    );
-    assert.equal(
-      providerCalls,
-      0,
-      'spend mismatch must not call provider.fetchUTxOs',
-    );
-    assert.equal(
-      deploymentCalls,
-      0,
-      'spend mismatch must not call deployment lookup',
-    );
-    assert.equal(enqueued, 0, 'spend mismatch must not enqueue');
-  }
-
-  {
-    let providerCalls = 0;
-    let deploymentCalls = 0;
-    let enqueued = 0;
-    const fp1 = deriveRequestFingerprint({ x: 1 });
-    const fp2 = deriveRequestFingerprint({ x: 2 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'recreate-mismatch',
-          requestFingerprint: fp1,
-          status: CheckStatus.PENDING,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-      provider: {
-        fetchUTxOs: async () => {
-          providerCalls += 1;
-          return [{ output: { address: 'addr_test1xyz' } }];
-        },
-      },
-      deploymentService: {
-        getDeploymentByContractAddress: async () => {
-          deploymentCalls += 1;
-          return {
-            deploymentTxHash: 'deplHash',
-            deploymentOutputIndex: 0,
-          };
-        },
-      },
-    });
-    await assert.rejects(
-      async () =>
-        svc.dispatchRecreateCommodity(
-          {
-            id: 'recreate-mismatch',
-            utxos: [{ txHash: 'abc', outputIndex: 0 }],
-            newDataReferences: ['cid1'],
-            utxoRef: {},
-          },
-          fp2,
-        ),
-      (error: unknown) => {
-        assert.ok(
-          error instanceof ConflictException,
-          'recreate mismatch must throw ConflictException',
-        );
-        assert.equal(
-          (error as ConflictException).getStatus(),
-          409,
-          'recreate mismatch must be 409',
-        );
-        return true;
-      },
-    );
-    assert.equal(
-      providerCalls,
-      0,
-      'recreate mismatch must not call provider.fetchUTxOs',
-    );
-    assert.equal(
-      deploymentCalls,
-      0,
-      'recreate mismatch must not call deployment lookup',
-    );
-    assert.equal(enqueued, 0, 'recreate mismatch must not enqueue');
-  }
-
-  {
-    let providerCalls = 0;
-    let deploymentCalls = 0;
-    let enqueued = 0;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'spend-terminal',
-          requestFingerprint: fp,
-          status: CheckStatus.SUCCESS,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-      provider: {
-        fetchUTxOs: async () => {
-          providerCalls += 1;
-          return [{ output: { address: 'addr_test1xyz' } }];
-        },
-      },
-      deploymentService: {
-        getDeploymentByContractAddress: async () => {
-          deploymentCalls += 1;
-          return {
-            deploymentTxHash: 'deplHash',
-            deploymentOutputIndex: 0,
-          };
-        },
-      },
-    });
-    await svc.dispatchSpendCommodity(
-      {
-        id: 'spend-terminal',
-        utxos: [{ txHash: 'abc', outputIndex: 0 }],
-        utxoRef: {},
-      },
-      fp,
-    );
-    assert.equal(
-      providerCalls,
-      0,
-      'spend terminal replay must not call provider.fetchUTxOs',
-    );
-    assert.equal(
-      deploymentCalls,
-      0,
-      'spend terminal replay must not call deployment lookup',
-    );
-    assert.equal(enqueued, 0, 'spend terminal replay must not enqueue');
-  }
-
-  {
-    let providerCalls = 0;
-    let deploymentCalls = 0;
-    let enqueued = 0;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'recreate-terminal',
-          requestFingerprint: fp,
-          status: CheckStatus.SUCCESS,
-        }),
-      },
-      queue: {
-        enqueue: async () => {
-          enqueued += 1;
-        },
-      },
-      provider: {
-        fetchUTxOs: async () => {
-          providerCalls += 1;
-          return [{ output: { address: 'addr_test1xyz' } }];
-        },
-      },
-      deploymentService: {
-        getDeploymentByContractAddress: async () => {
-          deploymentCalls += 1;
-          return {
-            deploymentTxHash: 'deplHash',
-            deploymentOutputIndex: 0,
-          };
-        },
-      },
-    });
-    await svc.dispatchRecreateCommodity(
-      {
-        id: 'recreate-terminal',
-        utxos: [{ txHash: 'abc', outputIndex: 0 }],
-        newDataReferences: ['cid1'],
-        utxoRef: {},
-      },
-      fp,
-    );
-    assert.equal(
-      providerCalls,
-      0,
-      'recreate terminal replay must not call provider.fetchUTxOs',
-    );
-    assert.equal(
-      deploymentCalls,
-      0,
-      'recreate terminal replay must not call deployment lookup',
-    );
-    assert.equal(enqueued, 0, 'recreate terminal replay must not enqueue');
-  }
-
-  {
-    let providerCalls = 0;
-    let deploymentCalls = 0;
-    let enqueued = 0;
-    let enqueuedData: unknown = null;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'spend-pending',
-          requestFingerprint: fp,
-          status: CheckStatus.PENDING,
-        }),
-      },
-      queue: {
-        enqueue: async (_kind: unknown, data: unknown) => {
-          enqueued += 1;
-          enqueuedData = data;
-        },
-      },
-      provider: {
-        fetchUTxOs: async () => {
-          providerCalls += 1;
-          return [{ output: { address: 'addr_test1xyz' } }];
-        },
-      },
-      deploymentService: {
-        getDeploymentByContractAddress: async (addr: string) => {
-          deploymentCalls += 1;
+        if (cause)
           assert.equal(
-            addr,
-            'addr_test1xyz',
-            'deployment lookup must use address from fetched UTxO',
+            (error as InternalServerErrorException).cause,
+            cause,
+            `23505 ${name} must keep its cause`,
           );
-          return {
-            deploymentTxHash: 'deplHash',
-            deploymentOutputIndex: 5,
-          };
-        },
+        return true;
       },
-    });
-    await svc.dispatchSpendCommodity(
-      {
-        id: 'spend-pending',
-        utxos: [{ txHash: 'abc', outputIndex: 0 }],
-        utxoRef: {},
-      },
-      fp,
-    );
-    assert.equal(
-      providerCalls,
-      1,
-      'spend PENDING replay must resolve provider data',
-    );
-    assert.equal(
-      deploymentCalls,
-      1,
-      'spend PENDING replay must resolve deployment',
-    );
-    assert.equal(enqueued, 1, 'spend PENDING replay must enqueue once');
-    assert.deepEqual(
-      (enqueuedData as { utxoRef: unknown }).utxoRef,
-      {
-        addr_test1xyz: {
-          singletonScript: undefined,
-          objectEventScript: { txHash: 'deplHash', outputIndex: 5 },
-        },
-      },
-      'spend PENDING replay must enqueue enriched utxoRef',
     );
   }
-
+}
+const routes = [
   {
-    let providerCalls = 0;
-    let deploymentCalls = 0;
-    let enqueued = 0;
-    let enqueuedData: unknown = null;
-    const fp = deriveRequestFingerprint({ x: 1 });
-    const svc = makeService({
-      checkDb: {
-        exists: async () => true,
-        findOne: async () => ({
-          id: 'recreate-pending',
-          requestFingerprint: fp,
-          status: CheckStatus.PENDING,
-        }),
-      },
-      queue: {
-        enqueue: async (_kind: unknown, data: unknown) => {
-          enqueued += 1;
-          enqueuedData = data;
-        },
-      },
-      provider: {
-        fetchUTxOs: async () => {
-          providerCalls += 1;
-          return [{ output: { address: 'addr_test1xyz' } }];
-        },
-      },
-      deploymentService: {
-        getDeploymentByContractAddress: async (addr: string) => {
-          deploymentCalls += 1;
-          assert.equal(
-            addr,
-            'addr_test1xyz',
-            'deployment lookup must use address from fetched UTxO',
-          );
-          return {
-            deploymentTxHash: 'deplHash',
-            deploymentOutputIndex: 7,
-          };
-        },
-      },
-    });
-    await svc.dispatchRecreateCommodity(
-      {
-        id: 'recreate-pending',
-        utxos: [{ txHash: 'abc', outputIndex: 0 }],
-        newDataReferences: ['cid1'],
-        utxoRef: {},
-      },
-      fp,
-    );
-    assert.equal(
-      providerCalls,
-      1,
-      'recreate PENDING replay must resolve provider data',
-    );
-    assert.equal(
-      deploymentCalls,
-      1,
-      'recreate PENDING replay must resolve deployment',
-    );
-    assert.equal(enqueued, 1, 'recreate PENDING replay must enqueue once');
-    assert.deepEqual(
-      (enqueuedData as { utxoRef: unknown }).utxoRef,
-      {
-        addr_test1xyz: {
-          singletonScript: undefined,
-          objectEventScript: { txHash: 'deplHash', outputIndex: 7 },
-        },
-      },
-      'recreate PENDING replay must enqueue enriched utxoRef',
-    );
+    name: 'spend',
+    data: (id: string): JobData => ({
+      id,
+      utxos: [{ txHash: 'abc', outputIndex: 0 }],
+      utxoRef: {},
+    }),
+    dispatch: (s: PrivateServiceAccess, d: JobData, fp: string) =>
+      s.dispatchSpendCommodity(d, fp),
+  },
+  {
+    name: 'recreate',
+    data: (id: string): JobData => ({
+      id,
+      utxos: [{ txHash: 'abc', outputIndex: 0 }],
+      newDataReferences: ['cid1'],
+      utxoRef: {},
+    }),
+    dispatch: (s: PrivateServiceAccess, d: JobData, fp: string) =>
+      s.dispatchRecreateCommodity(d, fp),
+  },
+] as const;
+async function checkRouteReplays(): Promise<void> {
+  const matching = deriveRequestFingerprint({ x: 1 });
+  const different = deriveRequestFingerprint({ x: 2 });
+  for (const [routeIndex, route] of routes.entries()) {
+    for (const [caseName, status, incoming, expectedCalls, conflicts] of [
+      ['mismatch', CheckStatus.PENDING, different, 0, true],
+      ['terminal', CheckStatus.SUCCESS, matching, 0, false],
+      ['PENDING', CheckStatus.PENDING, matching, 1, false],
+    ] as const) {
+      const id = `${route.name}-${caseName}`;
+      const queued = fakeQueue();
+      const chain = fakeChainServices(5 + routeIndex * 2);
+      const service = makeService({
+        checkDb: fakeCheckDb({ existing: checkRow(status, matching, id) }),
+        queue: queued.queue,
+        provider: chain.provider,
+        deploymentService: chain.deploymentService,
+      });
+      const action = () => route.dispatch(service, route.data(id), incoming);
+      if (conflicts) await assertConflict(action, `${route.name} mismatch`);
+      else await action();
+      assert.equal(
+        chain.providerCalls.length,
+        expectedCalls,
+        `${route.name} ${caseName} provider call count`,
+      );
+      assert.equal(
+        chain.deploymentCalls.length,
+        expectedCalls,
+        `${route.name} ${caseName} deployment call count`,
+      );
+      assert.equal(
+        queued.calls.length,
+        expectedCalls,
+        `${route.name} ${caseName} enqueue count`,
+      );
+      if (expectedCalls) {
+        assert.deepEqual(
+          chain.providerCalls[0],
+          ['abc', 0],
+          `${route.name} PENDING must resolve the requested UTxO`,
+        );
+        assert.equal(
+          chain.deploymentCalls[0],
+          'addr_test1xyz',
+          `${route.name} PENDING must resolve the fetched address`,
+        );
+        assert.deepEqual(
+          queued.calls[0].data.utxoRef,
+          {
+            addr_test1xyz: {
+              singletonScript: undefined,
+              objectEventScript: {
+                txHash: 'deplHash',
+                outputIndex: 5 + routeIndex * 2,
+              },
+            },
+          },
+          `${route.name} PENDING must enqueue one enriched utxoRef`,
+        );
+      }
+    }
   }
-
+}
+async function main(): Promise<void> {
+  await checkFingerprints();
+  await checkAlreadyAccepted();
+  await checkInsertRaces();
+  await checkRouteReplays();
   console.log('idempotency check passed');
 }
-
 void main().catch((error) => {
   console.error(error);
   process.exit(1);
