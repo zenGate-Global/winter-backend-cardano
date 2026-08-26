@@ -44,8 +44,8 @@ importers:
         specifier: ^11.0.1
         version: 11.0.1(@nestjs/common@11.1.24(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.24)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.30(ioredis@5.10.1)(pg@8.21.0)(ts-node@10.9.2(@swc/core@1.15.40)(@types/node@25.9.1)(typescript@5.9.3)))
       '@zengate/winter-cardano-mesh':
-        specifier: 2.0.1
-        version: 2.0.1(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)(typescript@5.9.3)
+        specifier: 3.0.0
+        version: 3.0.0(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)(typescript@5.9.3)
       class-transformer:
         specifier: ^0.5.1
         version: 0.5.1
@@ -1703,8 +1703,8 @@ packages:
   '@xtuc/long@4.2.2':
     resolution: {integrity: sha512-NuHqBY1PB/D8xU6s/thBgOAiAP7HOYDQ32+BFZILJ8ivkUkAHQnWfn6WhL79Owj1qmUnoN/YPhktdIoucipkAQ==}
 
-  '@zengate/winter-cardano-mesh@2.0.1':
-    resolution: {integrity: sha512-hA+FmiFZt/5G3h/hGjFKNdbBJ1VmNcTI5ZK4NDLDT8lValGlQSH9yTkReJqyx4tzMuG3VFbQNkXqNXDPHgNpFQ==}
+  '@zengate/winter-cardano-mesh@3.0.0':
+    resolution: {integrity: sha512-lwQ+LkN1FamYdr/rac7dNc3HxAz3PLMxqqGwc9RGAOciRyorgHfrudZTjT97kA6h3Kc0ZZgBJxc950qCwti5vw==}
     peerDependencies:
       typescript: ^5
 
@@ -6767,7 +6767,7 @@ snapshots:
 
   '@xtuc/long@4.2.2': {}
 
-  '@zengate/winter-cardano-mesh@2.0.1(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)(typescript@5.9.3)':
+  '@zengate/winter-cardano-mesh@3.0.0(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)(typescript@5.9.3)':
     dependencies:
       '@meshsdk/core': 1.9.1(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
       typescript: 5.9.3

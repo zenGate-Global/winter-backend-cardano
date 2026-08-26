@@ -59,6 +59,11 @@ or mint a duplicate token that cannot be recalled.
 - **Never turn on the inert validation as a one-line fix.** Two separate defects
   hide behind it, and a partial fix rejects every live caller.
 - **`SUCCESS` means submitted, not confirmed.** Nothing waits for a block.
+- **Never assume one contract address covers every commodity.** Library 3.0.0
+  ships the silent trace validators, so the script hash and the address changed.
+  A commodity minted before 3.0.0 stays at the old address and needs 2.0.1 to
+  spend. `deployment.scriptHash` names the validator that a row serves, and a
+  null value means the old verbose validator.
 - **A submitted job is idempotent.** The service stores the transaction hash and
   signed CBOR before submission in `Check.txid` and nullable `Check.signedTx`.
   - A retry resubmits the stored bytes and must never rebuild.

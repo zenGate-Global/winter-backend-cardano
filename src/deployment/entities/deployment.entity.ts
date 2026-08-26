@@ -32,6 +32,15 @@ export class Deployment {
   deploymentOutputIndex: number;
 
   @ApiProperty({
+    description:
+      'Script hash of the parameterized object event validator that this deployment serves',
+    example: '194b693a61ff0de6f07d8b47016f9c368793de6e7ad53584c1deafce',
+    nullable: true,
+  })
+  @Column('text', { nullable: true })
+  scriptHash: string | null;
+
+  @ApiProperty({
     description: 'created at timestamp',
     example: '2024-01-15T10:30:00Z',
   })

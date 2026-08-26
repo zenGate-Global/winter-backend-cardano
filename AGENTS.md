@@ -118,6 +118,20 @@ The `@zengate/*` and `@meshsdk/*` packages are the only exceptions.
   `@zengate/winter-cardano-mesh` are pinned to exact versions, and a pnpm
   override forces the winter library onto the same Mesh build. Bumping one of
   the three alone will desync the peer graph.
+- **The contract address changed at library 3.0.0.** That release ships the
+  silent trace validators, so the script hash, the contract address and the
+  minting policy id are all new. The logic is unchanged, because a verbose
+  rebuild of the same contract source reproduces the 2.0.1 bytecode byte for
+  byte. A commodity minted before 3.0.0 stays at the old address, and it needs
+  2.0.1 to spend. Never assume one address covers every commodity.
+
+  |Network|Before 3.0.0|From 3.0.0|
+  |---|---|---|
+  |mainnet|`addr1wx0u9dyeeex4nsgp6pk3qaq92s5ap3xc56edsk3hlgdhjnce8qkjd`|`addr1w8dmzvsy5mhpx4x5leggtk96yvvrftmfsp7z3jxu20623gsrv9np4`|
+  |preview|`addr_test1wph2wcr4ysaen987g87magjh96l2ymvrgyvnu6yjvrtahdqu7qvqy`|`addr_test1wpfc7e7zqlqtra8hnyq7k0hh3rdwjm7m0fnzuyqjl0xxt3gatmv8f`|
+- **`deployment.scriptHash` names the validator that a row serves.** The column
+  is nullable, so a row written before this change reads null. A null value
+  means the old verbose validator.
 - **Mesh `1.9.1` mis-prices a funding input that carries a script.** The
   builder records the script size on the input and leaves
   `minFeeRefScriptCostPerByte` out of the fee, so the node rejects the

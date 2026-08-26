@@ -55,6 +55,11 @@ export class PalmyraConsumerService {
   private readonly provider: BlockfrostProvider;
   private readonly factory: EventFactory;
   private readonly deployerAddress: string;
+  // The parameterized validator is fixed for the life of the process, so its
+  // hash is too. It identifies which contract a deployment row serves, which
+  // matters once a library upgrade changes the bytecode and a second row
+  // appears beside the first.
+  private readonly objectEventScriptHash: string;
   constructor(
     private readonly checkDb: CheckService,
     private readonly db: TransactionsService,
@@ -74,6 +79,10 @@ export class PalmyraConsumerService {
       // rejected with ExUnitsTooBigUTxO. It also overpays the script fee on
       // every single transaction.
       this.provider,
+    );
+    this.objectEventScriptHash = resolveScriptHash(
+      this.factory.objectEventContract.code,
+      this.factory.objectEventContract.version,
     );
   }
 
@@ -413,6 +422,7 @@ export class PalmyraConsumerService {
           deploymentTxHash: deployment.txid,
           deploymentOutputIndex: deployment.outputIndex,
           deployAddress: deployment.deployAddress,
+          scriptHash: this.objectEventScriptHash,
         });
         return;
       } catch (error) {
@@ -426,12 +436,10 @@ export class PalmyraConsumerService {
     txHash: string;
     outputIndex: number;
   } | null> {
-    const scriptHash = resolveScriptHash(
-      this.factory.objectEventContract.code,
-      this.factory.objectEventContract.version,
-    );
     const utxos = await this.provider.fetchAddressUTxOs(this.deployerAddress);
-    const match = utxos.find((utxo) => utxo.output.scriptHash === scriptHash);
+    const match = utxos.find(
+      (utxo) => utxo.output.scriptHash === this.objectEventScriptHash,
+    );
     return match
       ? {
           txHash: match.input.txHash,
