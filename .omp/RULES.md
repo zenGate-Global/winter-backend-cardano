@@ -31,6 +31,13 @@ or mint a duplicate token that cannot be recalled.
 - **Never change the shape of `POST /ipfs`, `POST /palmyra/tokenizeCommodity`,
   or `GET /check/{id}`.** Palmyra Pro consumes them, and it polls for the literal
   string `SUCCESS`.
+- **Production and staging must keep one resident instance.** Their queue worker
+  and reconciler run inside the process.
+- **An `Idempotency-Key` binds to its request fingerprint.** A replay with
+  another body must return 409. A null legacy fingerprint must not cause 409.
+- **`POST /ipfs` validates only its envelope.** It validates `logTime` and the
+  non-empty `events` array. It must not validate event content owned by Palmyra
+  Pro.
 - **Never bump one of the three coupled pins alone.** `@meshsdk/core`,
   `@meshsdk/core-csl`, and `@zengate/winter-cardano-mesh` move together.
 - **Never let a reference-script output fund a transaction.** Spending it

@@ -141,6 +141,8 @@ The `@zengate/*` and `@meshsdk/*` packages are the only exceptions.
   not affected. `getFundingUtxos` removes the one case that triggers it, and
   mint, recreate, a two-UTxO recreate and spend all pass on `1.9.1` on the
   preview network. `beta.104` and `1.9.0` price the funding input correctly.
+- **Production and staging must keep one resident instance.** The queue worker
+  and reconciler run inside the process.
 - **The queue is one queue with a singleton policy and a local concurrency of
   one.** That is a correctness constraint, not a performance setting. It is the
   only thing that stops two builds from selecting the same wallet UTxOs.
@@ -157,6 +159,12 @@ The `@zengate/*` and `@meshsdk/*` packages are the only exceptions.
 - **A submitted job is idempotent.** The service stores the transaction hash
   and signed CBOR in `Check.txid` and the nullable `Check.signedTx` column before
   submission. A retry resubmits those bytes and must never rebuild.
+- **An idempotency key binds to its request fingerprint.** A replay with a
+  different body must return 409. A null fingerprint on an old row must not
+  cause 409.
+- **`POST /ipfs` validates only its envelope.** It validates `logTime` and the
+  non-empty `events` array. It must not validate event content that Palmyra Pro
+  owns.
 - **Queue status names are inverted.** `PENDING` waits in pg-boss. `QUEUED`
   means that the consumer actively builds and submits. Both are non-terminal.
 - **`src/palmyra/palymra.utxo.service.ts` is misspelled on purpose now.** The
@@ -247,15 +255,14 @@ public, so record rules and invariants here. Report a working attack in chat.
 
 ### Configuration
 
-- **`--min-instances` is 0 for production.** The queue worker runs in process.
-  When the service scales to zero, queued jobs stop moving until an unrelated
-  request wakes an instance.
+- **Production and staging deploy with `--min-instances` set to 1.** Their queue
+  worker and reconciler stay active without an incoming request.
 
 ### API and validation
 
 - **Validation differs by route.** Nested UTxO arrays and token identifiers are
-  validated. The upload body remains a union that erases to `Object`, so the
-  global pipe skips EPCIS payload validation.
+  validated. `POST /ipfs` validates its envelope and leaves event content to
+  Palmyra Pro.
 - **The UTxO hash decorator requires 64 characters.** The former 62-character
   rule was safe to correct before nested validation because it did not run on
   array elements.
