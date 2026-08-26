@@ -79,7 +79,7 @@ jobs:
           echo "SHORT_NAME=$SHORT_NAME" >> $GITHUB_ENV
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
 
-          if [[ "$SHORT_NAME" == "staging" ]]; then
+          if [[ "$SHORT_NAME" == "staging" || "$SHORT_NAME" == "prod" ]]; then
             MIN_INSTANCES=1
           else
             MIN_INSTANCES=0
