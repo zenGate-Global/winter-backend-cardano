@@ -11,10 +11,58 @@ export enum CheckType {
 }
 
 export enum CheckStatus {
-  SUCCESS = 'SUCCESS',
-  QUEUED = 'QUEUED',
-  ERROR = 'ERROR',
   PENDING = 'PENDING',
+  QUEUED = 'QUEUED',
+  SUBMITTED = 'SUBMITTED',
+  SUCCESS = 'SUCCESS',
+  CONFIRMED = 'CONFIRMED',
+  ERROR = 'ERROR',
+}
+
+export class TokenizeProvenance {
+  @ApiProperty()
+  policyId: string;
+
+  @ApiProperty()
+  assetNameHex: string;
+
+  @ApiProperty()
+  contractAddress: string;
+
+  @ApiProperty()
+  outputIndex: number;
+
+  @ApiProperty()
+  cid: string;
+}
+
+export class ChainConfirmation {
+  @ApiProperty()
+  network: string;
+
+  @ApiProperty()
+  txid: string;
+
+  @ApiProperty()
+  blockHash: string;
+
+  @ApiProperty()
+  blockHeight: number;
+
+  @ApiProperty()
+  slot: number;
+
+  @ApiProperty()
+  depth: number;
+
+  @ApiProperty()
+  requiredDepth: number;
+
+  @ApiProperty({ format: 'date-time' })
+  confirmedAt: string;
+
+  @ApiProperty({ type: TokenizeProvenance, nullable: true })
+  provenance: TokenizeProvenance | null;
 }
 
 @Entity()
@@ -36,7 +84,7 @@ export class Check {
 
   @ApiProperty({
     description:
-      'status: PENDING means waiting in the pg-boss queue, QUEUED means the consumer is actively building and submitting',
+      'PENDING waits for the queue, QUEUED builds, SUBMITTED and CONFIRMED are dormant rollback states, and SUCCESS is final in Phase1',
     enum: CheckStatus,
     example: CheckStatus.SUCCESS,
   })
@@ -58,7 +106,19 @@ export class Check {
 
   @Exclude()
   @Column('text', { nullable: true })
+  requestFingerprint: string | null;
+
+  @Exclude()
+  @Column('text', { nullable: true })
   signedTx: string | null;
+
+  @ApiProperty({ type: ChainConfirmation, nullable: true })
+  @Column('jsonb', { nullable: true })
+  confirmation: ChainConfirmation | null;
+
+  @Exclude()
+  @Column('timestamptz', { nullable: true })
+  lastChainCheckAt: Date | null;
 
   @ApiProperty({
     description:

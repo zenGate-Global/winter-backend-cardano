@@ -1,7 +1,6 @@
-// This file documents the EPCIS payload shape for POST /ipfs and does not
-// currently enforce it. The controller body is a union that erases to Object
-// so the global ValidationPipe skips it, and several examples use legacy names.
-// Keep the file honest for future enablement but do not activate validation here.
+// These legacy EPCIS classes document event-content shapes. POST /ipfs validates
+// only its envelope through IpfsEnvelopeDto. Palmyra Pro owns the event content,
+// so these decorators remain inactive.
 import {
   IsArray,
   IsNotEmpty,

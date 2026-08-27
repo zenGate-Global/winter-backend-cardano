@@ -8,19 +8,13 @@ import {
 } from '@nestjs/common';
 import { IpfsService } from './ipfs.service';
 import { StoreIpfsResponseDto } from './dto/store-ipfs.dto';
+import { IpfsEnvelopeDto } from './dto/ipfs-envelope.dto';
 import {
   ApiBadRequestResponse,
   ApiCreatedResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { ErrorResponse } from '../palmyra/dto/error.dto';
-import {
-  AggregationEvent,
-  AssociationEvent,
-  ObjectEvent,
-  TransactionEvent,
-  TransformationEvent,
-} from '../ipfs/dto/metadata.dto';
 
 @ApiTags('IPFS')
 @Controller('ipfs')
@@ -39,12 +33,7 @@ export class IpfsController {
   })
   async store(
     @Body()
-    data:
-      | ObjectEvent
-      | AggregationEvent
-      | TransactionEvent
-      | TransformationEvent
-      | AssociationEvent,
+    data: IpfsEnvelopeDto,
   ): Promise<StoreIpfsResponseDto> {
     try {
       const res = await this.ipfsService.storeJson(data);
