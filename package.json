@@ -28,6 +28,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "docs-lint": "python3 scripts/ste-check.py AGENTS.md CLAUDE.md .omp/RULES.md .omp/AGENTS.md .omp/agents .omp/commands",
+    "check:rollback": "pnpm build && node dist/check/rollback.check.js",
     "check:idempotency": "pnpm build && node dist/palmyra/idempotency.check.js"
   },
   "dependencies": {

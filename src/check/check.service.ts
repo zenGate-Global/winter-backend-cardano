@@ -1,8 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateCheckDto } from './dto/create-check.dto';
 import { UpdateCheckDto } from './dto/update-check.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { Check, CheckStatus } from './entities/check.entity';
 
 // Appended to the error text of a row the reconciler has looked up against the
@@ -83,6 +87,20 @@ export class CheckService {
   }
 
   async update(id: string, updateCheckDto: UpdateCheckDto) {
+    if (
+      updateCheckDto.status === CheckStatus.CONFIRMED ||
+      updateCheckDto.status === CheckStatus.SUBMITTED
+    ) {
+      throw new BadRequestException(
+        'Use markSubmitted or markConfirmed for SUBMITTED/CONFIRMED',
+      );
+    }
+    if (
+      (updateCheckDto as unknown as { confirmation?: unknown }).confirmation !==
+      undefined
+    ) {
+      throw new BadRequestException('Generic update cannot write confirmation');
+    }
     const partial: Partial<Check> = {};
     if (updateCheckDto.status !== undefined)
       partial.status = updateCheckDto.status;
@@ -94,10 +112,14 @@ export class CheckService {
     const isNonSuccessTransition =
       updateCheckDto.status !== undefined &&
       updateCheckDto.status !== CheckStatus.SUCCESS;
+    const protectedStatuses = isNonSuccessTransition
+      ? [CheckStatus.CONFIRMED, CheckStatus.SUBMITTED, CheckStatus.SUCCESS]
+      : [CheckStatus.CONFIRMED, CheckStatus.SUBMITTED];
     const result = await this.checkRepository.update(
-      isNonSuccessTransition
-        ? { id, status: Not(CheckStatus.SUCCESS) }
-        : { id },
+      {
+        id,
+        status: Not(In(protectedStatuses)),
+      } as unknown as Record<string, unknown>,
       partial,
     );
     if (result.affected === 0) {

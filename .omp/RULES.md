@@ -89,6 +89,9 @@ or mint a duplicate token that cannot be recalled.
   consent in the current chat.
 - **Never publish an exploit recipe in a tracked file.** This repository is
   public. Record a rule and an invariant. Report a working attack in chat.
+- **Never write SUBMITTED or CONFIRMED in Phase1 and never downgrade a row that holds one.**
+  The generic update must reject those literals and a confirmation write.
+  It must keep a SUBMITTED or CONFIRMED row from moving to another status.
 
 ## Text
 

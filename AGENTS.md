@@ -176,6 +176,7 @@ The `@zengate/*` and `@meshsdk/*` packages are the only exceptions.
 - **Yaci devnet covers mint, recreate, and commodity details.** Use a URL-shaped
   `BLOCKFROST_KEY` for its Blockfrost-compatible API. Yaci cannot verify spend
   or mempool chaining.
+- **Phase1 keeps future confirmation columns dormant.** The `Check` table has nullable `confirmation` and `lastChainCheckAt`. No Phase1 path writes `SUBMITTED` or `CONFIRMED` or `confirmation`. The generic update rejects those literals and a `confirmation` write. It protects a row that holds `SUBMITTED` or `CONFIRMED` from downgrade. New rows hold `PENDING` then `QUEUED` then `SUCCESS` or `ERROR`. A `CONFIRMED` row remains readable with its evidence after rollback.
 
 ## Known defects
 
