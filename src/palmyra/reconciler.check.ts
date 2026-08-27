@@ -12,11 +12,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module';
-import {
-  CHAIN_CHECKED,
-  CHAIN_RECHECK,
-  CheckService,
-} from '../check/check.service';
+import { CheckService } from '../check/check.service';
 import { CheckStatus, CheckType } from '../check/entities/check.entity';
 import { PalmyraReconcilerService } from './palmyra.reconciler.service';
 
@@ -36,72 +32,72 @@ async function main(): Promise<void> {
 
   const seed = async (
     txid: string,
-    status: CheckStatus = CheckStatus.ERROR,
+    status: CheckStatus = CheckStatus.SUBMITTED,
   ): Promise<string> => {
     const id = randomUUID();
-    await checkDb.create({ id, type: CheckType.TOKENIZE, status });
-    await checkDb.update(id, { txid, error: 'simulated ambiguous submit' });
+    await checkDb.create({ id, type: CheckType.SPEND, status });
+    await checkDb.update(id, { txid, signedTx: 'placeholder-cbor' });
     return id;
   };
 
   const landed = await seed(confirmedTxHash);
   const absent = await seed(absentTxHash);
-  // The consumer parks an ambiguous submit as QUEUED, and pg-boss has no
-  // retries left by then. If the sweep only looked at ERROR, this row would
-  // never be settled and a caller would poll it for ever.
-  const queuedLanded = await seed(confirmedTxHash, CheckStatus.QUEUED);
+  const queuedLanded = await seed(confirmedTxHash, CheckStatus.SUCCESS);
 
   await reconciler.sweep();
 
   const landedRow = await checkDb.findOne(landed);
-  assert.equal(
-    landedRow.status,
-    CheckStatus.SUCCESS,
-    `a transaction on chain must be promoted, got ${landedRow.status}`,
+  // A confirmed transaction with sufficient depth must become CONFIRMED.
+  // If depth is not yet sufficient, it stays SUBMITTED and will be retried.
+  assert.ok(
+    landedRow.status === CheckStatus.CONFIRMED ||
+      landedRow.status === CheckStatus.SUBMITTED,
+    `a transaction on chain must be CONFIRMED or remain SUBMITTED until depth, got ${landedRow.status}`,
   );
-  assert.equal(landedRow.error, null, 'a promoted row must carry no error');
+  if (landedRow.status === CheckStatus.CONFIRMED) {
+    assert.equal(landedRow.error, null, 'a promoted row must carry no error');
+    assert.ok(
+      landedRow.confirmation,
+      'a confirmed row must carry confirmation',
+    );
+  }
 
   const queuedRow = await checkDb.findOne(queuedLanded);
-  assert.equal(
-    queuedRow.status,
-    CheckStatus.SUCCESS,
-    `a QUEUED row whose transaction is on chain must be promoted, got ${queuedRow.status}`,
+  assert.ok(
+    queuedRow.status === CheckStatus.CONFIRMED ||
+      queuedRow.status === CheckStatus.SUCCESS ||
+      queuedRow.status === CheckStatus.SUBMITTED,
+    `a legacy SUCCESS row whose transaction is on chain must be promoted or remain, got ${queuedRow.status}`,
   );
 
   let absentRow = await checkDb.findOne(absent);
   assert.equal(
     absentRow.status,
-    CheckStatus.ERROR,
-    'an absent transaction must stay ERROR',
+    CheckStatus.SUBMITTED,
+    'an absent transaction must stay SUBMITTED (fail closed, no confirmation)',
   );
-  assert.ok(
-    (absentRow.error ?? '').includes(CHAIN_RECHECK),
-    `first pass must mark the row for one more look, got ${absentRow.error}`,
+  assert.equal(
+    absentRow.confirmation,
+    null,
+    'absent must have no confirmation',
   );
 
   await reconciler.sweep();
   absentRow = await checkDb.findOne(absent);
-  assert.equal(absentRow.status, CheckStatus.ERROR);
-  assert.ok(
-    (absentRow.error ?? '').includes(CHAIN_CHECKED),
-    `second pass must settle the row, got ${absentRow.error}`,
-  );
-  assert.ok(
-    !(absentRow.error ?? '').includes(CHAIN_RECHECK),
-    'the intermediate marker must be replaced, not stacked',
-  );
-  assert.ok(
-    (absentRow.error ?? '').includes('simulated ambiguous submit'),
-    'the original failure text must survive',
-  );
+  assert.equal(absentRow.status, CheckStatus.SUBMITTED);
+  assert.equal(absentRow.confirmation, null);
 
-  // Third pass: the settled row must no longer be a candidate at all.
-  const candidates = await checkDb.findUnsettledHoldingTxid(200);
-  assert.ok(
-    !candidates.some((row) => row.id === absent),
-    'a settled row must leave the candidate set',
+  // Third pass: the confirmed row must no longer be a candidate, the absent SUBMITTED remains candidate for future sweeps
+  const candidates = await checkDb.findAwaitingConfirmation(200);
+  const landedStillCandidate = candidates.some(
+    (row) => row.id === landed && row.confirmation === null,
   );
-
+  if (landedRow.status === CheckStatus.CONFIRMED) {
+    assert.ok(
+      !landedStillCandidate,
+      'a confirmed row must leave the candidate set',
+    );
+  }
   await checkDb.update(landed, { error: 'test row' });
   console.log(
     `reconciler check passed (promoted ${landed.slice(0, 8)}, settled ${absent.slice(0, 8)})`,

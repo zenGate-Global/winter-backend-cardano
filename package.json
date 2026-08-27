@@ -24,6 +24,8 @@
     "check:ipfs-envelope": "pnpm build && node dist/ipfs/ipfs-envelope.check.js",
     "check:reconcile-exhausted": "pnpm build && node dist/palmyra/reconcile-exhausted.check.js",
     "check:reconciler": "pnpm build && node dist/palmyra/reconciler.check.js",
+    "check:confirmation-contract": "ts-node -r tsconfig-paths/register src/palmyra/confirmation-contract.check.ts",
+    "check:deployment-durability": "pnpm build && node dist/palmyra/deployment-durability.check.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

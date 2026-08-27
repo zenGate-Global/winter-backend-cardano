@@ -49,8 +49,8 @@ async function main(): Promise<void> {
   const landedRow = await checkDb.findOne(landed);
   assert.equal(
     landedRow.status,
-    CheckStatus.SUCCESS,
-    `a transaction on chain must settle SUCCESS, got ${landedRow.status}`,
+    CheckStatus.SUBMITTED,
+    `a transaction on chain must settle SUBMITTED, got ${landedRow.status}`,
   );
   assert.equal(landedRow.txid, confirmedTxHash);
   assert.equal(landedRow.error, null, 'a reconciled row must carry no error');

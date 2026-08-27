@@ -84,9 +84,9 @@ export class Check {
 
   @ApiProperty({
     description:
-      'PENDING waits for the queue, QUEUED builds, SUBMITTED and CONFIRMED are dormant rollback states, and SUCCESS is final in Phase1',
+      'PENDING waits for the queue, QUEUED builds, SUBMITTED awaits chain proof, SUCCESS is legacy, and CONFIRMED is final',
     enum: CheckStatus,
-    example: CheckStatus.SUCCESS,
+    example: CheckStatus.CONFIRMED,
   })
   @Column('text', { nullable: true })
   status: CheckStatus;

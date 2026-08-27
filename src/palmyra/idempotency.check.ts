@@ -359,7 +359,7 @@ async function checkRouteReplays(): Promise<void> {
   const matching = deriveRequestFingerprint({ x: 1 });
   const different = deriveRequestFingerprint({ x: 2 });
   for (const [routeIndex, route] of routes.entries()) {
-    for (const [caseName, status, incoming, expectedCalls, conflicts] of [
+    for (const [caseName, status, incoming, expectedEnqueue, conflicts] of [
       ['mismatch', CheckStatus.PENDING, different, 0, true],
       ['terminal', CheckStatus.SUCCESS, matching, 0, false],
       ['PENDING', CheckStatus.PENDING, matching, 1, false],
@@ -378,42 +378,24 @@ async function checkRouteReplays(): Promise<void> {
       else await action();
       assert.equal(
         chain.providerCalls.length,
-        expectedCalls,
-        `${route.name} ${caseName} provider call count`,
+        0,
+        `${route.name} ${caseName} must not call provider on request thread`,
       );
       assert.equal(
         chain.deploymentCalls.length,
-        expectedCalls,
-        `${route.name} ${caseName} deployment call count`,
+        0,
+        `${route.name} ${caseName} must not call deployment on request thread`,
       );
       assert.equal(
         queued.calls.length,
-        expectedCalls,
+        expectedEnqueue,
         `${route.name} ${caseName} enqueue count`,
       );
-      if (expectedCalls) {
-        assert.deepEqual(
-          chain.providerCalls[0],
-          ['abc', 0],
-          `${route.name} PENDING must resolve the requested UTxO`,
-        );
-        assert.equal(
-          chain.deploymentCalls[0],
-          'addr_test1xyz',
-          `${route.name} PENDING must resolve the fetched address`,
-        );
+      if (expectedEnqueue) {
         assert.deepEqual(
           queued.calls[0].data.utxoRef,
-          {
-            addr_test1xyz: {
-              singletonScript: undefined,
-              objectEventScript: {
-                txHash: 'deplHash',
-                outputIndex: 5 + routeIndex * 2,
-              },
-            },
-          },
-          `${route.name} PENDING must enqueue one enriched utxoRef`,
+          {},
+          `${route.name} PENDING must enqueue raw utxoRef, enrichment belongs in worker`,
         );
       }
     }

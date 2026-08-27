@@ -3,10 +3,12 @@ import {
   recreateCommodityJob,
   spendCommodityJob,
   tokenizeCommodityJob,
+  UtxoQuery,
 } from '../types/job.dto';
 import {
   BlockfrostProvider,
   resolveScriptHash,
+  resolveTxHash,
   TxParser,
   UTxO,
 } from '@meshsdk/core';
@@ -46,6 +48,7 @@ type ExistingTx =
       kind: 'existing';
       txid: string;
       signedTx: string;
+      storedSignedTx: string;
       deployment?: StoredDeployment;
     };
 
@@ -55,10 +58,6 @@ export class PalmyraConsumerService {
   private readonly provider: BlockfrostProvider;
   private readonly factory: EventFactory;
   private readonly deployerAddress: string;
-  // The parameterized validator is fixed for the life of the process, so its
-  // hash is too. It identifies which contract a deployment row serves, which
-  // matters once a library upgrade changes the bytecode and a second row
-  // appears beside the first.
   private readonly objectEventScriptHash: string;
   constructor(
     private readonly checkDb: CheckService,
@@ -73,11 +72,6 @@ export class PalmyraConsumerService {
       ZENGATE_MNEMONIC(),
       this.provider,
       this.provider,
-      // Without an evaluator every redeemer declares the fixed default budget
-      // of mem 7,000,000. Two of those already reach the preview cap of
-      // 17,500,000, so a two-commodity spend or a three-commodity recreate is
-      // rejected with ExUnitsTooBigUTxO. It also overpays the script fee on
-      // every single transaction.
       this.provider,
     );
     this.objectEventScriptHash = resolveScriptHash(
@@ -110,19 +104,11 @@ export class PalmyraConsumerService {
     );
   }
 
-  // Only for a failure that happened before anything was submitted, where a
-  // retry is therefore free of risk.
   private isTransientBuildError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message : String(error);
-    // Blockfrost answers 404 for an input that exists but has not reached a
-    // block yet, which is what a chained build hits under a burst.
     if (/"status(?:_code)?"\s*:\s*404/.test(msg)) return true;
     if (/has not been found/i.test(msg)) return true;
-    // The evaluator resolves inputs through the same provider, so it fails the
-    // same way on a chained build. A validator that genuinely rejects also
-    // lands here, and it costs the remaining attempts before the row settles.
     if (/evaluate redeemers failed|tx evaluation fail/i.test(msg)) return true;
-    // The wallet can be momentarily short while its change confirms.
     if (/insufficient collateral/i.test(msg)) return true;
     return this.isAmbiguousSubmitError(error);
   }
@@ -213,7 +199,12 @@ export class PalmyraConsumerService {
   async performUpdate(job: TxQueueJob) {
     try {
       const check = await this.checkDb.findOne(job.data.id);
-      if (check.status === CheckStatus.SUCCESS) return;
+      if (
+        check.status === CheckStatus.SUCCESS ||
+        check.status === CheckStatus.CONFIRMED ||
+        check.status === CheckStatus.SUBMITTED
+      )
+        return;
       await this.checkDb.update(job.data.id, {
         status: CheckStatus.QUEUED,
       });
@@ -266,7 +257,9 @@ export class PalmyraConsumerService {
         `Check ${id} has txid but no signedTx, needs reconciliation`,
       );
       await this.checkDb.update(id, {
-        ...(check.status === CheckStatus.SUCCESS
+        ...(check.status === CheckStatus.SUCCESS ||
+        check.status === CheckStatus.CONFIRMED ||
+        check.status === CheckStatus.SUBMITTED
           ? {}
           : { status: CheckStatus.ERROR }),
         error: message,
@@ -274,26 +267,105 @@ export class PalmyraConsumerService {
       return { kind: 'reconciliation' };
     }
 
+    // Never rebuild a row that already has txid plus signedTx. The stored
+    // transaction is the exact bytes that were submitted; rebuilding would
+    // select different wallet UTxOs and mint a second token.
     const stored = this.decodeStoredTx(check.signedTx);
-    if (!stored.deployment) {
-      this.logger.log(`Resubmitting stored tx for ${id}: ${check.txid}`);
-      try {
-        await this.factory.submitTx(stored.signedTx);
-      } catch (submitError) {
-        try {
-          await this.provider.fetchTxInfo(check.txid);
-          this.logger.log(`Stored tx for ${id} is confirmed: ${check.txid}`);
-        } catch {
-          throw submitError;
-        }
-      }
-    }
     return {
       kind: 'existing',
       txid: check.txid,
       signedTx: stored.signedTx,
+      storedSignedTx: check.signedTx,
       deployment: stored.deployment,
     };
+  }
+
+  private async enrichUtxoRef(
+    utxos: UtxoQuery[],
+  ): Promise<
+    Record<
+      string,
+      { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+    >
+  > {
+    if (!utxos.length) return {};
+    const fetched = await Promise.all(
+      utxos.map((u) => this.provider.fetchUTxOs(u.txHash, u.outputIndex)),
+    );
+    const contractAddresses = fetched.map(
+      (arr) => arr?.[0]?.output.address ?? '',
+    );
+    const utxoRef: Record<
+      string,
+      { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
+    > = {};
+    for (const cA of contractAddresses) {
+      if (!cA) continue;
+      try {
+        const deployment =
+          await this.deploymentService.getDeploymentByContractAddress(cA);
+        utxoRef[cA] = {
+          singletonScript: undefined,
+          objectEventScript: {
+            txHash: deployment.deploymentTxHash,
+            outputIndex: deployment.deploymentOutputIndex,
+          },
+        };
+      } catch (error) {
+        this.logger.warn(
+          `Deployment not found for contract address ${cA}: ${error}`,
+        );
+      }
+    }
+    return utxoRef;
+  }
+
+  private async submitWithHashCheck(
+    id: string,
+    signedTx: string,
+    expectedTxid: string,
+    storedSignedTx = signedTx,
+  ): Promise<void> {
+    const expected = expectedTxid.toLowerCase();
+    const computed = resolveTxHash(signedTx).toLowerCase();
+    if (computed !== expected) {
+      throw new Error(
+        `expected txid ${expected} does not match computed ${computed}`,
+      );
+    }
+    let returned: string;
+    try {
+      const result = await this.factory.submitTx(signedTx);
+      returned =
+        typeof result === 'string'
+          ? result.toLowerCase()
+          : String(result).toLowerCase();
+    } catch (error) {
+      // If submit throws, check mempool for the expected transaction. A mempool
+      // hit proves the transaction reached the network, so promote to SUBMITTED.
+      try {
+        const key = BLOCKFROST_KEY() as string;
+        const bf = key.startsWith('http')
+          ? new BlockFrostAPI({ projectId: 'devnet', customBackend: key })
+          : new BlockFrostAPI({ projectId: key });
+        await bf.mempoolTx(expected);
+        await this.checkDb.markSubmitted(id, expected, storedSignedTx);
+        this.logger.log(
+          `Mempool recovery promoted ${id} to SUBMITTED: ${expected}`,
+        );
+        return;
+      } catch {
+        throw error;
+      }
+    }
+    if (returned !== expected) {
+      throw new Error(
+        `submitTx returned mismatched hash ${returned} expected ${expected}`,
+      );
+    }
+    // Write SUBMITTED immediately before any deployment or transaction-table bookkeeping.
+    await this.checkDb.markSubmitted(id, expected, storedSignedTx);
+    this.logger.log(`Submitted ${id}: ${expected}`);
   }
 
   private async recordFailure(
@@ -306,10 +378,6 @@ export class PalmyraConsumerService {
     }`;
     const check = await this.checkDb.findOne(id);
     if (!check.txid) {
-      // Nothing reached the network, so a retry cannot double spend or double
-      // mint. A transient build failure must go back on the queue. A burst
-      // that chains onto an unconfirmed change output gets a Blockfrost 404
-      // until that output reaches a block, and the retry then succeeds.
       if (this.isTransientBuildError(error)) {
         await this.checkDb.update(id, { error: message });
         this.logger.warn(
@@ -323,9 +391,6 @@ export class PalmyraConsumerService {
       });
       return;
     }
-    // A submit error alone cannot prove that the stored transaction was
-    // rejected. A duplicate or BadInputs response can mean that the identical
-    // transaction is pending or confirmed.
     const reason = `AMBIGUOUS submit for ${operation}: ${message} (tx ${check.txid} may have reached the network, reconcile by hash)`;
     await this.checkDb.update(id, {
       status: CheckStatus.QUEUED,
@@ -337,28 +402,54 @@ export class PalmyraConsumerService {
     throw error;
   }
 
-  // Called by the queue worker on the last attempt of a job that keeps
-  // throwing. A stored hash remains non-terminal unless the chain proves
-  // success. A lookup failure leaves the row for the reconciler.
   async markRetriesExhausted(id: string, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     const check = await this.checkDb.findOne(id).catch(() => null);
-    if (!check || check.status === CheckStatus.SUCCESS) {
+    if (
+      !check ||
+      check.status === CheckStatus.SUBMITTED ||
+      check.status === CheckStatus.CONFIRMED ||
+      check.status === CheckStatus.SUCCESS
+    ) {
       return;
     }
 
-    if (check.txid) {
+    if (check.txid && check.signedTx) {
+      // Prefer direct Blockfrost tx lookup for finality, but on exhaustion we
+      // only promote to SUBMITTED, never to SUCCESS/CONFIRMED. The reconciler
+      // will later prove depth and provenance.
       try {
-        await this.provider.fetchTxInfo(check.txid);
-        await this.checkDb.update(id, {
-          status: CheckStatus.SUCCESS,
-          txid: check.txid,
-          error: null,
-        });
-        this.logger.warn(
-          `Reconciled ${id} by hash after retries were exhausted: ${check.txid} is on chain`,
-        );
-        return;
+        const key = BLOCKFROST_KEY() as string;
+        const bf = key.startsWith('http')
+          ? new BlockFrostAPI({ projectId: 'devnet', customBackend: key })
+          : new BlockFrostAPI({ projectId: key });
+        // Try mempool first, then chain via txs; any hit becomes SUBMITTED.
+        try {
+          await bf.mempoolTx(check.txid);
+          await this.checkDb.markSubmitted(id, check.txid, check.signedTx);
+          this.logger.warn(
+            `Reconciled ${id} by mempool after retries exhausted: ${check.txid} promoted to SUBMITTED`,
+          );
+          return;
+        } catch {
+          // not in mempool, try chain
+        }
+        // Use BlockFrostAPI txs via direct client if available; fallback to provider fetchTxInfo
+        try {
+          await bf.txs(check.txid);
+          await this.checkDb.markSubmitted(id, check.txid, check.signedTx);
+          this.logger.warn(
+            `Reconciled ${id} by hash after retries exhausted: ${check.txid} is on chain, promoted to SUBMITTED`,
+          );
+          return;
+        } catch {
+          await this.provider.fetchTxInfo(check.txid);
+          await this.checkDb.markSubmitted(id, check.txid, check.signedTx);
+          this.logger.warn(
+            `Reconciled ${id} by hash after retries exhausted: ${check.txid} is on chain`,
+          );
+          return;
+        }
       } catch (fetchError) {
         if (!this.isNotFound(fetchError)) {
           const reason = `AMBIGUOUS after retries exhausted: ${message} (tx ${check.txid} could not be confirmed, reconcile by hash)`;
@@ -371,19 +462,14 @@ export class PalmyraConsumerService {
           );
           return;
         }
-        // fetchTxInfo 404: the tx is not confirmed. If it is in the mempool
-        // it can still confirm, so leave it for the reconciler.
+        // 404 on chain: keep as QUEUED for reconciler to observe mempool, or leave for later sweep
         try {
           const key = BLOCKFROST_KEY() as string;
           const bf = key.startsWith('http')
             ? new BlockFrostAPI({ projectId: 'devnet', customBackend: key })
             : new BlockFrostAPI({ projectId: key });
           await bf.mempoolTx(check.txid);
-          const reason = `AMBIGUOUS after retries exhausted: ${message} (tx ${check.txid} is in mempool, reconcile by hash)`;
-          await this.checkDb.update(id, {
-            status: CheckStatus.QUEUED,
-            error: reason,
-          });
+          await this.checkDb.markSubmitted(id, check.txid, check.signedTx);
           this.logger.warn(
             `Retries exhausted for ${id} with tx ${check.txid} in mempool`,
           );
@@ -400,16 +486,22 @@ export class PalmyraConsumerService {
             );
             return;
           }
+          const reason = `AMBIGUOUS after retries exhausted: ${message} (tx ${check.txid} was absent from chain and mempool, reconcile by hash)`;
+          await this.checkDb.update(id, {
+            status: CheckStatus.QUEUED,
+            error: reason,
+          });
+          this.logger.warn(
+            `Retries exhausted for ${id} with unresolved txid ${check.txid}`,
+          );
+          return;
         }
       }
     }
 
-    const suffix = check.txid
-      ? ` (tx ${check.txid} was not found on chain at settlement, re-check by hash before retrying)`
-      : '';
     await this.checkDb.update(id, {
       status: CheckStatus.ERROR,
-      error: `retries exhausted: ${message}${suffix}`,
+      error: `retries exhausted: ${message}`,
     });
     this.logger.error(`Retries exhausted for ${id}: ${message}`);
   }
@@ -461,9 +553,6 @@ export class PalmyraConsumerService {
         typeof TxParser
       >[1],
     );
-    // Without these the parser re-resolves every outref through Blockfrost,
-    // which only knows confirmed transactions, so a mint that chained onto an
-    // unconfirmed change output fails here after it already submitted.
     const body = await parser.parse(signedTx, providedUtxos);
     const output = body.outputs.find((candidate) =>
       candidate.amount.some((asset) => asset.unit !== 'lovelace'),
@@ -540,10 +629,12 @@ export class PalmyraConsumerService {
         contractAddress: context.contractAddress,
         deployAddress: this.deployerAddress,
       };
-      await this.checkDb.update(data.id, {
-        txid: mintTxid,
-        signedTx: this.encodeStoredTx(signedTx, deployment),
-      });
+      await this.checkDb.attachReferenceDeployment(
+        data.id,
+        mintTxid,
+        signedTx,
+        this.encodeStoredTx(signedTx, deployment),
+      );
     }
 
     await this.factory.submitTx(deployment.signedTx);
@@ -557,12 +648,38 @@ export class PalmyraConsumerService {
 
       let txid: string;
       let signedTx: string;
+      let storedSignedTx: string | undefined;
       let storedDeployment: StoredDeployment | undefined;
-      // Kept so the deployment step can parse the mint without asking
-      // Blockfrost to resolve outrefs that are not in a block yet.
       let mintInputUtxos: UTxO[] | undefined;
       if (existing.kind === 'existing') {
-        ({ txid, signedTx, deployment: storedDeployment } = existing);
+        ({
+          txid,
+          signedTx,
+          storedSignedTx,
+          deployment: storedDeployment,
+        } = existing);
+        const check = await this.checkDb.findOne(data.id);
+        if (
+          check.status === CheckStatus.SUBMITTED ||
+          check.status === CheckStatus.CONFIRMED ||
+          check.status === CheckStatus.SUCCESS
+        ) {
+          try {
+            await this.ensureDeployment(
+              data,
+              txid,
+              signedTx,
+              storedDeployment,
+              mintInputUtxos,
+            );
+          } catch (deployError) {
+            this.logger.error(
+              `deployment bookkeeping failed after mint ${txid}: ${deployError}`,
+            );
+          }
+          return;
+        }
+        await this.submitWithHashCheck(data.id, signedTx, txid, storedSignedTx);
       } else {
         const result = (await this.retryBuildTransaction(() =>
           buildMint(this.factory, { data }, true),
@@ -579,21 +696,13 @@ export class PalmyraConsumerService {
         signedTx = result.signedTx;
         mintInputUtxos = result.inputUtxos;
         await this.checkDb.update(data.id, { txid, signedTx });
-        await this.factory.submitTx(signedTx);
+        await this.submitWithHashCheck(data.id, signedTx, txid);
         this.logger.log(
-          `Mint successful with singleton: ${result.singleton} at txid: ${txid}`,
+          `Mint submitted with singleton: ${result.singleton} at txid: ${txid}`,
         );
       }
 
-      // The transaction is on the network. Record that before anything else.
-      // Nothing after this point may turn a submitted mint back into a
-      // failure: a caller polls this row for SUCCESS, and an ERROR here makes
-      // it retry a mint that already produced a token.
-      await this.checkDb.update(data.id, {
-        status: CheckStatus.SUCCESS,
-        txid,
-        error: null,
-      });
+      // SUBMITTED already written before bookkeeping
       try {
         await this.ensureDeployment(
           data,
@@ -603,9 +712,6 @@ export class PalmyraConsumerService {
           mintInputUtxos,
         );
       } catch (deployError) {
-        // A missing deployment row is recoverable. Recreate and spend fall
-        // back to an inlined script, and the next mint calls
-        // findOnChainDeployment and records the existing reference script.
         this.logger.error(
           `deployment bookkeeping failed after mint ${txid}: ${deployError}`,
         );
@@ -627,12 +733,31 @@ export class PalmyraConsumerService {
       if (existing.kind === 'reconciliation') return;
 
       let hash: string;
+      let signedTx: string;
       let orderedOutRefs: { txHash: string; outputIndex: number }[];
       if (existing.kind === 'existing') {
         hash = existing.txid;
+        signedTx = existing.signedTx;
+        const check = await this.checkDb.findOne(data.id);
+        if (
+          check.status === CheckStatus.SUBMITTED ||
+          check.status === CheckStatus.CONFIRMED ||
+          check.status === CheckStatus.SUCCESS
+        ) {
+          return;
+        }
+        await this.submitWithHashCheck(
+          data.id,
+          signedTx,
+          hash,
+          existing.storedSignedTx,
+        );
         const utxos = await this.factory.getUtxosByOutRef(data.utxos);
         orderedOutRefs = utxos.map((utxo) => utxo.input);
       } else {
+        if (!data.utxoRef || Object.keys(data.utxoRef).length === 0) {
+          data.utxoRef = await this.enrichUtxoRef(data.utxos);
+        }
         const result = (await this.retryBuildTransaction(() =>
           buildRecreate(this.factory, { data }, true),
         )) as
@@ -644,19 +769,15 @@ export class PalmyraConsumerService {
           | undefined;
         if (!result) throw new Error('buildRecreate returned empty');
         ({ hash, orderedOutRefs } = result);
+        signedTx = result.signedTx;
         await this.checkDb.update(data.id, {
           txid: hash,
-          signedTx: result.signedTx,
+          signedTx,
         });
-        await this.factory.submitTx(result.signedTx);
+        await this.submitWithHashCheck(data.id, signedTx, hash);
       }
 
-      await this.checkDb.update(data.id, {
-        status: CheckStatus.SUCCESS,
-        txid: hash,
-        error: null,
-      });
-      this.logger.log(`Recreation successful: ${hash}`);
+      this.logger.log(`Recreation submitted: ${hash}`);
       try {
         for (const [index, utxo] of orderedOutRefs.entries()) {
           await this.db.recreate(utxo.txHash, utxo.outputIndex, {
@@ -678,29 +799,42 @@ export class PalmyraConsumerService {
       if (existing.kind === 'reconciliation') return;
 
       let hash: string;
+      let signedTx: string;
       if (existing.kind === 'existing') {
         hash = existing.txid;
+        signedTx = existing.signedTx;
+        const check = await this.checkDb.findOne(data.id);
+        if (
+          check.status === CheckStatus.SUBMITTED ||
+          check.status === CheckStatus.CONFIRMED ||
+          check.status === CheckStatus.SUCCESS
+        ) {
+          return;
+        }
+        await this.submitWithHashCheck(
+          data.id,
+          signedTx,
+          hash,
+          existing.storedSignedTx,
+        );
       } else {
+        if (!data.utxoRef || Object.keys(data.utxoRef).length === 0) {
+          data.utxoRef = await this.enrichUtxoRef(data.utxos);
+        }
         const result = (await this.retryBuildTransaction(() =>
           buildSpend(this.factory, { data }, true),
         )) as { hash: string; signedTx: string } | undefined;
         if (!result) throw new Error('buildSpend returned empty');
         hash = result.hash;
+        signedTx = result.signedTx;
         await this.checkDb.update(data.id, {
           txid: hash,
-          signedTx: result.signedTx,
+          signedTx,
         });
-        await this.factory.submitTx(result.signedTx);
+        await this.submitWithHashCheck(data.id, signedTx, hash);
       }
 
-      await this.checkDb.update(data.id, {
-        status: CheckStatus.SUCCESS,
-        txid: hash,
-        // A retried job carries the error text of the attempt that failed.
-        // Leaving it makes a SUCCESS row look like a failure to a caller.
-        error: null,
-      });
-      this.logger.log(`Spend successful: ${hash}`);
+      this.logger.log(`Spend submitted: ${hash}`);
       try {
         for (const utxo of data.utxos) {
           await this.db.spent(utxo.txHash, utxo.outputIndex, {
