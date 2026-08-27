@@ -260,10 +260,8 @@ export function resetGenesisCache(): void {
 
 export function networkLabel(): string {
   try {
-    const raw = NETWORK();
-    const lower = String(raw).toLowerCase();
-    return lower.charAt(0).toUpperCase() + lower.slice(1);
+    return String(NETWORK()).toLowerCase();
   } catch {
-    return 'Unknown';
+    return 'unknown';
   }
 }

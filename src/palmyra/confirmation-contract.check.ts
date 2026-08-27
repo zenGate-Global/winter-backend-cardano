@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import {
-  depthFromHeights,
-  parseRequiredDepth,
-  validateTxResponse,
-  validateBlockResponse,
-  proveTokenizeProvenance,
   buildConfirmation,
-  resetGenesisCache,
+  depthFromHeights,
   getCachedGenesis,
+  networkLabel,
+  parseRequiredDepth,
+  proveTokenizeProvenance,
+  resetGenesisCache,
+  validateBlockResponse,
+  validateTxResponse,
 } from './chain-confirmation';
 import { EventFactory } from '@zengate/winter-cardano-mesh';
 import { CheckStatus, CheckType } from '../check/entities/check.entity';
@@ -443,10 +444,9 @@ async function checkProvenance(): Promise<void> {
     }
   ).getObjectDatumFieldsFromPlutusCbor = originalDecode;
 }
-
 function checkConfirmationShape(): void {
   const conf = buildConfirmation({
-    network: 'Preprod',
+    network: 'preprod',
     txid: 'a'.repeat(64),
     blockHash: 'b'.repeat(64),
     blockHeight: 100,
@@ -456,14 +456,14 @@ function checkConfirmationShape(): void {
     confirmedAt: new Date().toISOString(),
     provenance: null,
   });
-  assert.equal(conf.network, 'Preprod');
+  assert.equal(conf.network, 'preprod');
   assert.equal(conf.txid, 'a'.repeat(64));
   assert.equal(conf.blockHash, 'b'.repeat(64));
   assert.equal(conf.depth, 15);
   assert.equal(conf.requiredDepth, 15);
   assert.equal(conf.provenance, null);
   const withProv = buildConfirmation({
-    network: 'Preprod',
+    network: 'preprod',
     txid: 'a'.repeat(64),
     blockHash: 'b'.repeat(64),
     blockHeight: 100,
@@ -480,6 +480,77 @@ function checkConfirmationShape(): void {
     },
   });
   assert.ok(withProv.provenance, 'provenance preserved');
+}
+
+function checkNetworkLabelCanonical(): void {
+  const prev = process.env.NETWORK;
+  try {
+    process.env.NETWORK = 'mainnet';
+    assert.equal(networkLabel(), 'mainnet', 'mainnet must stay lowercase');
+    process.env.NETWORK = 'Mainnet';
+    assert.equal(networkLabel(), 'mainnet', 'Mainnet title case must normalize to lowercase');
+    process.env.NETWORK = 'MAINNET';
+    assert.equal(networkLabel(), 'mainnet', 'MAINNET upper must normalize to lowercase');
+    process.env.NETWORK = 'preview';
+    assert.equal(networkLabel(), 'preview', 'preview must stay lowercase');
+    process.env.NETWORK = 'Preview';
+    assert.equal(networkLabel(), 'preview', 'Preview title case must normalize to lowercase');
+    process.env.NETWORK = 'preprod';
+    assert.equal(networkLabel(), 'preprod', 'preprod must stay lowercase');
+    process.env.NETWORK = 'custom';
+    assert.equal(networkLabel(), 'custom', 'custom must stay lowercase');
+    process.env.NETWORK = 'Custom';
+    assert.equal(networkLabel(), 'custom', 'Custom title case must normalize to lowercase');
+    const confMainnet = buildConfirmation({
+      network: (() => {
+        process.env.NETWORK = 'mainnet';
+        return networkLabel();
+      })(),
+      txid: 'a'.repeat(64),
+      blockHash: 'b'.repeat(64),
+      blockHeight: 100,
+      slot: 1,
+      depth: 10,
+      requiredDepth: 10,
+      confirmedAt: new Date().toISOString(),
+      provenance: null,
+    });
+    assert.equal(confMainnet.network, 'mainnet', 'confirmation via networkLabel must be lowercase for mainnet');
+    const confPreview = buildConfirmation({
+      network: (() => {
+        process.env.NETWORK = 'preview';
+        return networkLabel();
+      })(),
+      txid: 'b'.repeat(64),
+      blockHash: 'c'.repeat(64),
+      blockHeight: 100,
+      slot: 1,
+      depth: 10,
+      requiredDepth: 10,
+      confirmedAt: new Date().toISOString(),
+      provenance: null,
+    });
+    assert.equal(confPreview.network, 'preview', 'confirmation via networkLabel must be lowercase for preview');
+    const confCustom = buildConfirmation({
+      network: (() => {
+        process.env.NETWORK = 'custom';
+        return networkLabel();
+      })(),
+      txid: 'c'.repeat(64),
+      blockHash: 'd'.repeat(64),
+      blockHeight: 100,
+      slot: 1,
+      depth: 10,
+      requiredDepth: 10,
+      confirmedAt: new Date().toISOString(),
+      provenance: null,
+    });
+    assert.equal(confCustom.network, 'custom', 'confirmation via networkLabel must be lowercase for custom');
+    assert.equal(confCustom.network, confCustom.network.toLowerCase(), 'confirmation network must be canonical lowercase');
+  } finally {
+    if (prev === undefined) delete (process.env as Record<string, string | undefined>).NETWORK;
+    else process.env.NETWORK = prev;
+  }
 }
 
 // Simulated 202 controller behavior: Location, Retry-After, body statusUrl, no provider build
@@ -868,6 +939,54 @@ async function checkReconcilerOutcomes(): Promise<void> {
   resetGenesisCache();
 }
 
+async function checkReconcilerNetworkLabel(): Promise<void> {
+  resetGenesisCache();
+  const prev = process.env.NETWORK;
+  const networks: Array<{ label: string; expected: string }> = [
+    { label: 'mainnet', expected: 'mainnet' },
+    { label: 'Preview', expected: 'preview' },
+    { label: 'custom', expected: 'custom' },
+  ];
+  for (const { label, expected } of networks) {
+    process.env.NETWORK = label;
+    const txid = 'a'.repeat(64);
+    const blockHash = 'b'.repeat(64);
+    let captured: string | null = null;
+    const service = Object.create(
+      PalmyraReconcilerService.prototype,
+    ) as PalmyraReconcilerService;
+    Object.assign(service as unknown as Record<string, unknown>, {
+      running: false,
+      logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
+      configService: { get: () => '1' },
+      checkDb: {
+        findAwaitingConfirmation: async () => [
+          { id: `id-${expected}`, txid, type: CheckType.SPEND, status: CheckStatus.SUBMITTED, additionalInfo: null },
+        ],
+        markChainAttempt: async () => undefined,
+        markObservedSubmitted: async () => true,
+        markConfirmed: async (_id: string, _txid: string, confirmation: { network: string }) => {
+          captured = confirmation.network;
+          return true;
+        },
+        markFailedContract: async () => true,
+      },
+      bf: {
+        blocksLatest: async () => ({ height: 120 }),
+        genesis: async () => ({ security_param: 1, network_magic: 42 }),
+        txs: async () => ({ hash: txid, block: blockHash, block_height: 100, block_time: 10, slot: 5, valid_contract: true }),
+        blocks: async () => ({ hash: blockHash, height: 100, time: 10, slot: 5 }),
+      },
+    });
+    await service.sweep();
+    assert.equal(captured, expected, `reconciler confirmation network must be ${expected} for NETWORK=${label}`);
+    assert.equal(String(captured).toLowerCase(), String(captured), 'reconciler network must be canonical lowercase');
+  }
+  if (prev === undefined) delete (process.env as Record<string, string | undefined>).NETWORK;
+  else process.env.NETWORK = prev;
+  resetGenesisCache();
+}
+
 async function main(): Promise<void> {
   checkDepth();
   checkDepthParsing();
@@ -876,6 +995,7 @@ async function main(): Promise<void> {
   checkValidateBlock();
   await checkProvenance();
   checkConfirmationShape();
+  checkNetworkLabelCanonical();
   await check202Contract();
   await checkAtomicTerminal();
   checkSubmitHashRule();
@@ -885,6 +1005,7 @@ async function main(): Promise<void> {
   checkTerminalExclusivity();
   checkFairRotation();
   await checkReconcilerOutcomes();
+  await checkReconcilerNetworkLabel();
   console.log('confirmation-contract check passed');
 }
 
