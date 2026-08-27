@@ -28,13 +28,14 @@ or mint a duplicate token that cannot be recalled.
   builds that select the same wallet UTxOs.
   - The queue options apply on first creation only. Editing them changes nothing
     on an existing database.
-- **Never change the shape of `POST /ipfs`, `POST /palmyra/tokenizeCommodity`,
-  or `GET /check/{id}`.** Palmyra Pro consumes them, and it polls for the literal
-  string `SUCCESS`.
-- **Production and staging must keep one resident instance.** Their queue worker
-  and reconciler run inside the process.
-- **An `Idempotency-Key` binds to its request fingerprint.** A replay with
-  another body must return 409. A null legacy fingerprint must not cause 409.
+- **Never change consumed response contracts.** Keep `POST /ipfs` and
+  `GET /check/{id}` shapes stable. `GET /check` adds nullable confirmation.
+  Tokenize, recreate, and spend return 202 Accepted. They include a dynamic
+  Location `/check/{id}`, Retry-After, and an operation body. The body contains
+  message, id, status, and statusUrl. Palmyra Pro polls for CONFIRMED as final
+  and legacy SUCCESS stays readable.
+- **Production and staging must keep one resident instance.** Their queue worker and reconciler run inside the process.
+- **An `Idempotency-Key` binds to its request fingerprint.** A replay with another body must return 409. A null legacy fingerprint must not cause 409.
 - **`POST /ipfs` validates only its envelope.** It validates `logTime` and the
   non-empty `events` array. It must not validate event content owned by Palmyra
   Pro.
@@ -45,12 +46,13 @@ or mint a duplicate token that cannot be recalled.
   `1.9.1` also under-prices such an input and the node rejects the transaction.
   `getFundingUtxos` drops any UTxO that carries `scriptRef` or `scriptHash`.
   Never remove that filter to reclaim the locked ADA.
-- **Never let a post-submit step downgrade a row to ERROR.** Write SUCCESS as
-  soon as `submitTx` returns. A caller polls for SUCCESS, so an ERROR on a
-  landed mint makes it retry and mint a second token.
-- **Never call `TxParser.parse` or the evaluator without the UTxOs you hold.**
-  Both re-resolve outrefs through Blockfrost, which knows only confirmed
-  transactions, so a chained build fails after it already succeeded.
+- **Never let a post-submit step downgrade a row to ERROR.** Write SUBMITTED
+  after a hash-matched submit. Do this before deployment or bookkeeping. A
+  caller polls for SUBMITTED and then CONFIRMED. An ERROR after mint submission
+  causes another mint.
+- **Never call `TxParser.parse` or the evaluator without held UTxOs.** Both
+  operations resolve outrefs through Blockfrost. Blockfrost knows only confirmed
+  transactions. A chained build fails after an earlier build succeeds.
 - **Never remove the evaluator from `EventFactory`.** Without it every redeemer
   declares mem 7,000,000, and two of those exceed the preview cap.
 - **Never treat a pg-boss `send` that returns null as a failure.** That null is
@@ -58,19 +60,22 @@ or mint a duplicate token that cannot be recalled.
 - **Never change `CheckService.create` back to `save`.** `save` issues an UPDATE
   when the primary key exists, which resets a finished row to PENDING and hides
   a replay. The insert must conflict so the replay is detected.
-- **Never trust an ERROR row that holds a transaction hash.** The hash is
-  written before the submit. `PalmyraReconcilerService` sweeps such rows against
-  the chain and promotes the ones that landed. Never widen its candidate query
-  to include a row already marked `[chain-checked]`, or a genuine failure is
-  looked up for ever.
-- **Never turn on the inert validation as a one-line fix.** Two separate defects
-  hide behind it, and a partial fix rejects every live caller.
-- **`SUCCESS` means submitted, not confirmed.** Nothing waits for a block.
+- **Never trust an ERROR or QUEUED row that holds a transaction hash.** The
+  hash is written before submit. The consumer mempool check and
+  `PalmyraReconcilerService` check such rows against the chain. New code can
+  promote ambiguous rows only to SUBMITTED. CONFIRMED requires depth,
+  `valid_contract`, block cross-check, and a transaction re-read. Tokenize also
+  requires provenance proof. Never infer expiry from elapsed time.
+- **Never enable the inert validation as a one-line fix.** Two defects hide
+  behind it. A partial fix rejects every live caller.
+- **`SUCCESS` is legacy submitted.** New code never writes SUCCESS. Keep it readable. `SUBMITTED` means accepted. `CONFIRMED` means depth-proved and for tokenize provenance-proved. Only CONFIRMED is final.
 - **Never assume one contract address covers every commodity.** Library 3.0.0
-  ships the silent trace validators, so the script hash and the address changed.
+  contains the silent trace validators. The script hash and address changed.
   A commodity minted before 3.0.0 stays at the old address and needs 2.0.1 to
-  spend. `deployment.scriptHash` names the validator that a row serves, and a
-  null value means the old verbose validator.
+  spend. `deployment.scriptHash` identifies the validator for a row. A null
+  value means the old verbose validator and provenance must use the historical
+  output address. It must not use the current contract address or hard-coded
+  output 0.
 - **A submitted job is idempotent.** The service stores the transaction hash and
   signed CBOR before submission in `Check.txid` and nullable `Check.signedTx`.
   - A retry resubmits the stored bytes and must never rebuild.

@@ -243,38 +243,59 @@ public, so record rules and invariants here. Report a working attack in chat.
   so the marker is the only bound on rework. An absent transaction is looked up
   twice, spaced by the interval, and then written off with `[chain-checked]`.
   Never widen the candidate query to include a marked row.
-- **Success must be recorded before any bookkeeping that follows a submit.**
-  A deployment write or a parse that fails after `submitTx` returns must never
-  turn a submitted transaction into ERROR. A caller polls for SUCCESS, and an
-  ERROR on a landed mint makes it retry and mint a second token. Ten rows in
-  one test run held a transaction that was on chain while the row said ERROR.
-- **An evaluator must be wired into `EventFactory`.** Without one every
-  redeemer declares the fixed default budget of mem 7,000,000. Two of those
-  reach the preview cap of 17,500,000, so a two-commodity spend and a
-  three-commodity recreate are both rejected with `ExUnitsTooBigUTxO`. Measured
-  on chain, the real cost is 17 to 56 times smaller than the default.
+- **Record success before bookkeeping after submit.** A deployment write or
+  parse failure after `submitTx` must not change a submitted transaction to
+  ERROR. Callers poll for SUBMITTED and then CONFIRMED. An ERROR after mint
+  submission causes another mint. The worker writes SUBMITTED after hash
+  comparison and before deployment or transaction bookkeeping.
+- **SUBMITTED never provides chain evidence.** The worker stores the expected
+  txid and signedTx before submit. It compares the `submitTx` result with
+  `resolveTxHash`. Only a match changes the status to SUBMITTED. Mempool or
+  chain recovery can promote ambiguous rows only to SUBMITTED.
+- **CONFIRMED requires direct Blockfrost canonical-chain proof.** The reconciler
+  uses `BlockFrostAPI` methods `txs`, `blocksLatest`, `blocks`, and `txsUtxos`.
+  It does not use Mesh `fetchTxInfo`. It validates the hash, block, height,
+  slot, time, and `valid_contract` and requires `valid_contract` true. It
+  cross-checks the block hash, height, slot, and time and re-reads the
+  transaction before the commit. A 404 or provider error stops confirmation.
+  Elapsed absence never proves final state.
+- **Depth is successor blocks.** depth equals latest height minus tx block height, tip inclusion is 0. Required depth comes from CHAIN_CONFIRMATION_DEPTH when set, strictly parsed as positive safe integer, otherwise cached genesis security_param. A later configuration change must not change an earlier CONFIRMED row.
+- **Tokenize provenance comes from the historical output.** The reconciler
+  reads `txsUtxos` and requires exactly one matching output. The output must
+  contain quantity 1 for `policyId` plus `assetNameHex`. Its datum data
+  reference hex must equal the stored CID bytes. The reconciler uses that
+  output address and `output_index`. It never recomputes the contract address
+  or hard-codes output 0. The output can be spent.
+- **Legacy SUCCESS stays readable.** New code never writes SUCCESS. The reconciler includes SUCCESS rows with valid txid and null confirmation for lazy confirmation, but never bulk-relabels them. A valid deep enough legacy row can move directly to CONFIRMED after provenance proof.
+- **Confirmation is atomic and terminal.** The conditional write matches the
+  id, expected txid, null confirmation, and eligible status. It sets status,
+  confirmation, and error together. CONFIRMED is never overwritten. Stored
+  depth is the observation at `confirmedAt`.
+- **An evaluator must be wired into `EventFactory`.** Without one every redeemer declares the fixed default budget of mem 7,000,000. Two of those reach the preview cap of 17,500,000, so a two-commodity spend and a three-commodity recreate are both rejected with `ExUnitsTooBigUTxO`. Measured on chain, the real cost is 17 to 56 times smaller than the default.
 
 ### Configuration
 
 - **Production and staging deploy with `--min-instances` set to 1.** Their queue
   worker and reconciler stay active without an incoming request.
 
-### API and validation
-
-- **Validation differs by route.** Nested UTxO arrays and token identifiers are
-  validated. `POST /ipfs` validates its envelope and leaves event content to
-  Palmyra Pro.
-- **The UTxO hash decorator requires 64 characters.** The former 62-character
-  rule was safe to correct before nested validation because it did not run on
-  array elements.
-- **The 32-byte token name limit exists downstream and at the API boundary.**
-  `@meshsdk/common` enforces the ledger limit. The DTO reports an early error.
-- **Handlers return stable error messages.** They retain raw upstream details
-  only as error causes for server logs.
-- **`GET /check`, `GET /transactions`, and `GET /deployments` paginate.** Keep
-  bounded page sizes on all three routes.
-- **A later database error must not overwrite `SUCCESS`.** A valid transaction
-  id means submitted, not confirmed.
+- **The UTxO hash decorator requires 64 characters.** The former rule required
+  62 characters. Correcting it was safe because nested validation did not run
+  on array elements.
+- **The 32-byte token name limit exists downstream and at the API boundary.** `@meshsdk/common` enforces the ledger limit. The DTO reports an early error.
+- **Handlers return stable error messages.** They retain raw upstream details only as error causes for server logs.
+- **`GET /check`, `GET /transactions`, and `GET /deployments` paginate.** Keep bounded page sizes on all three routes.
+- **The three Palmyra operation endpoints return 202 Accepted.** This applies
+  to tokenize, recreate, and spend. Each response has a dynamic Location
+  `/check/{id}` and Retry-After. The body contains message, id, status, and
+  statusUrl. An idempotent replay returns the current status and keeps the
+  existing id. The request thread performs only deterministic DTO validation
+  and fingerprint checks. The serialized worker performs build and enrichment.
+- **Confirmation is exposed as a nullable object.** `GET /check` keeps existing
+  fields. It adds `confirmation` with network, txid, blockHash, blockHeight, and
+  slot. It also contains depth, requiredDepth, confirmedAt, and nullable
+  provenance. Provenance is null for non-tokenize operations. The response
+  excludes signedTx and requestFingerprint.
+- **A later database error must not overwrite `CONFIRMED` or `SUBMITTED`.** A confirmed transaction is final evidence. A submitted transaction awaits confirmation.
 
 ### Logging
 
