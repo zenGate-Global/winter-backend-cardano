@@ -5,51 +5,46 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BlockfrostProvider } from '@meshsdk/core';
+import {
+  BlockFrostAPI,
+  BlockfrostServerError,
+} from '@blockfrost/blockfrost-js';
 
 import { BLOCKFROST_KEY } from '../constants';
+import { CheckService } from '../check/check.service';
 import {
-  CHAIN_CHECKED,
-  CHAIN_RECHECK,
-  CheckService,
-} from '../check/check.service';
-import { CheckStatus } from '../check/entities/check.entity';
+  CheckStatus,
+  CheckType,
+  TokenizeProvenance,
+} from '../check/entities/check.entity';
+import {
+  buildConfirmation,
+  depthFromHeights,
+  getCachedGenesis,
+  isSafeNonNegativeInt,
+  networkLabel,
+  parseRequiredDepth,
+  proveTokenizeProvenance,
+  validateBlockResponse,
+  validateTxResponse,
+} from './chain-confirmation';
 
-// How long a row must carry its first marker before the sweep may write it off.
-// A confirmed-chain 404 cannot rule out a transaction still in the mempool, so
-// the sweep waits rather than call it a failure. RECONCILE_RECHECK_MIN_AGE_MS
-// overrides it, which is how the check script drives both passes in one run.
-const CHAIN_RECHECK_MIN_AGE_MS_DEFAULT = 24 * 60 * 60 * 1000;
-const CHAIN_RECHECK_MARKER = /\[chain-recheck\](?:@(\S+))?/;
-const CHAIN_RECHECK_MARKER_G = /\[chain-recheck\](?:@\S+)?/g;
-
-// Settles rows that claim to have failed while holding a transaction hash.
-//
-// The consumer writes the hash before it submits, so an ambiguous submit can
-// leave a row saying ERROR for a transaction that reached the chain. The
-// consumer already looks the hash up when its retries run out, but that lookup
-// can itself fail while the provider is unreachable, and then nothing revisits
-// the row. Recording ERROR for a transaction that landed is the worst outcome
-// available, because a caller must use a new idempotency key to retry and that
-// mints a second token for a commodity that already exists.
-//
-// Promoting a row to SUCCESS is idempotent, so two instances sweeping at once is
-// harmless. It only spends the same lookups twice.
-//
-// The worker runs in process, so this sweep only runs while an instance is
-// alive. With `--min-instances` at 0 a scaled to zero service reconciles
-// nothing until a request wakes it.
 @Injectable()
 export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PalmyraReconcilerService.name);
-  private readonly provider = new BlockfrostProvider(BLOCKFROST_KEY());
+  private readonly bf: BlockFrostAPI;
   private timer?: NodeJS.Timeout;
   private running = false;
 
   constructor(
     private readonly checkDb: CheckService,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    const key = BLOCKFROST_KEY() as string;
+    this.bf = key.startsWith('http')
+      ? new BlockFrostAPI({ projectId: 'devnet', customBackend: key })
+      : new BlockFrostAPI({ projectId: key });
+  }
 
   onModuleInit(): void {
     const seconds = this.intervalSeconds();
@@ -60,7 +55,6 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
     this.timer = setInterval(() => {
       void this.sweep();
     }, seconds * 1000);
-    // Do not hold the process open on shutdown.
     this.timer.unref();
     this.logger.log(`reconciler sweeping every ${seconds}s`);
   }
@@ -72,8 +66,6 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // Public so an operator can force a pass, and so the check script can drive
-  // one without waiting for the interval.
   async sweep(): Promise<{ examined: number; promoted: number }> {
     if (this.running) {
       return { examined: 0, promoted: 0 };
@@ -82,18 +74,40 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
     let examined = 0;
     let promoted = 0;
     try {
-      const candidates = await this.checkDb.findUnsettledHoldingTxid(
+      const latest = await this.fetchLatest();
+      if (!latest) {
+        this.logger.warn('reconciler: latest block unavailable, skip sweep');
+        return { examined, promoted };
+      }
+      const genesis = await getCachedGenesis(this.bf);
+      const requiredDepth = parseRequiredDepth(
+        this.configService.get<string>('CHAIN_CONFIRMATION_DEPTH'),
+        genesis.securityParam,
+      );
+      if (requiredDepth === null) {
+        this.logger.warn('reconciler: depth policy unavailable, fail closed');
+        return { examined, promoted };
+      }
+      const candidates = await this.checkDb.findAwaitingConfirmation(
         this.batchSize(),
       );
       for (const row of candidates) {
         examined += 1;
-        if (await this.settle(row.id, row.txid, row.error)) {
-          promoted += 1;
+        let ok = false;
+        try {
+          ok = await this.tryConfirm(row, latest.height, requiredDepth);
+        } finally {
+          try {
+            await this.checkDb.markChainAttempt(row.id);
+          } catch {
+            void 0;
+          }
         }
+        if (ok) promoted += 1;
       }
       if (examined > 0) {
         this.logger.log(
-          `reconciler examined ${examined} row(s), promoted ${promoted} to SUCCESS`,
+          `reconciler examined ${examined} row(s), confirmed ${promoted}`,
         );
       }
     } catch (error) {
@@ -106,59 +120,147 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
     return { examined, promoted };
   }
 
+  private async fetchLatest(): Promise<{ height: number } | null> {
+    try {
+      const block = await (
+        this.bf as unknown as {
+          blocksLatest: () => Promise<Record<string, unknown>>;
+        }
+      ).blocksLatest();
+      const height = block.height as unknown;
+      if (!isSafeNonNegativeInt(height)) return null;
+      return { height: height as number };
+    } catch {
+      return null;
+    }
+  }
+
   private isNotFound(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof BlockfrostServerError) {
+      return error.status_code === 404;
+    }
+    const candidate = error as { status_code?: unknown; statusCode?: unknown };
+    if (candidate && typeof candidate === 'object') {
+      if (candidate.status_code === 404 || candidate.statusCode === 404)
+        return true;
+    }
+    const msg = error instanceof Error ? error.message : String(error);
     return (
-      /"status(?:_code)?"\s*:\s*404/.test(message) ||
-      /has not been found/i.test(message)
+      /"status(?:_code)?"\s*:\s*404/.test(msg) ||
+      /has not been found/i.test(msg)
     );
   }
 
-  // Returns true when the row was promoted to SUCCESS.
-  private async settle(
-    id: string,
-    txid: string,
-    rowError: string | null,
+  private async tryConfirm(
+    row: { id: string; txid: string; type: CheckType; additionalInfo: unknown },
+    latestHeight: number,
+    requiredDepth: number,
   ): Promise<boolean> {
+    const expectedTxid = row.txid.toLowerCase();
+    let tx: unknown;
     try {
-      await this.provider.fetchTxInfo(txid);
-    } catch (fetchError) {
-      if (!this.isNotFound(fetchError)) {
-        return false;
-      }
-
-      const errorText = rowError ?? '';
-      const marker = errorText.match(CHAIN_RECHECK_MARKER);
-      const observedAt = marker?.[1] ? Date.parse(marker[1]) : Number.NaN;
-      const validObservedAt =
-        Number.isFinite(observedAt) &&
-        new Date(observedAt).toISOString() === marker?.[1];
-      const now = Date.now();
-
-      // A confirmed-chain 404 cannot rule out a transaction in the mempool.
-      if (validObservedAt && now - observedAt < this.recheckMinAgeMs()) {
-        return false;
-      }
-
-      const base = errorText.replace(CHAIN_RECHECK_MARKER_G, '').trimEnd();
-      const chainMarker = validObservedAt
-        ? CHAIN_CHECKED
-        : `${CHAIN_RECHECK}@${new Date(now).toISOString()}`;
-      await this.checkDb.update(id, {
-        error: `${base} ${chainMarker}`.trim(),
-      });
+      tx = await (
+        this.bf as unknown as { txs: (hash: string) => Promise<unknown> }
+      ).txs(expectedTxid);
+    } catch (error) {
+      if (this.isNotFound(error)) return false;
       return false;
     }
+    const parsed = validateTxResponse(tx, expectedTxid);
+    if (!parsed) return false;
+    if (parsed.valid_contract === false) {
+      await this.checkDb.markFailedContract(
+        row.id,
+        expectedTxid,
+        'chain-invalid: valid_contract false',
+      );
+      this.logger.warn(
+        `reconciler marked ${row.id} ERROR valid_contract false`,
+      );
+      return false;
+    }
+    if (latestHeight < parsed.block_height) return false;
+    const depth = depthFromHeights(latestHeight, parsed.block_height);
+    if (depth < requiredDepth) {
+      const status = (row as unknown as { status?: CheckStatus }).status as
+        | CheckStatus
+        | undefined;
+      if (status === CheckStatus.QUEUED || status === CheckStatus.ERROR) {
+        try {
+          await this.checkDb.markObservedSubmitted(row.id, expectedTxid);
+        } catch {
+          void 0;
+        }
+      }
+      return false;
+    }
+    let block: unknown;
+    try {
+      block = await (
+        this.bf as unknown as { blocks: (hash: string) => Promise<unknown> }
+      ).blocks(parsed.block);
+    } catch {
+      return false;
+    }
+    if (!validateBlockResponse(block, parsed)) return false;
 
-    await this.checkDb.update(id, {
-      status: CheckStatus.SUCCESS,
-      txid,
-      error: null,
+    let tx2: unknown;
+    try {
+      tx2 = await (
+        this.bf as unknown as { txs: (hash: string) => Promise<unknown> }
+      ).txs(expectedTxid);
+    } catch {
+      return false;
+    }
+    const parsed2 = validateTxResponse(tx2, expectedTxid);
+    if (!parsed2) return false;
+    if (
+      parsed2.block !== parsed.block ||
+      parsed2.block_height !== parsed.block_height ||
+      parsed2.block_time !== parsed.block_time ||
+      parsed2.slot !== parsed.slot ||
+      parsed2.valid_contract !== true
+    )
+      return false;
+
+    let provenance: TokenizeProvenance | null = null;
+    if (row.type === CheckType.TOKENIZE) {
+      const info = row.additionalInfo as {
+        tokenName?: string;
+        metadataReference?: string;
+      } | null;
+      const tokenName = info?.tokenName ?? '';
+      const metadataReference = info?.metadataReference ?? '';
+      provenance = await proveTokenizeProvenance(
+        this.bf,
+        expectedTxid,
+        tokenName,
+        metadataReference,
+      );
+      if (!provenance) return false;
+    }
+
+    const confirmation = buildConfirmation({
+      network: networkLabel(),
+      txid: expectedTxid,
+      blockHash: parsed.block,
+      blockHeight: parsed.block_height,
+      slot: parsed.slot,
+      depth,
+      requiredDepth,
+      confirmedAt: new Date().toISOString(),
+      provenance,
     });
-    this.logger.warn(
-      `reconciled ${id}: ${txid} is on chain, the row said ERROR`,
+    const ok = await this.checkDb.markConfirmed(
+      row.id,
+      expectedTxid,
+      confirmation,
     );
-    return true;
+    if (ok)
+      this.logger.log(
+        `reconciled ${row.id} CONFIRMED ${expectedTxid} depth ${depth}`,
+      );
+    return ok;
   }
 
   private intervalSeconds(): number {
@@ -167,13 +269,6 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
     return raw !== undefined && Number.isFinite(parsed) ? parsed : 300;
   }
 
-  private recheckMinAgeMs(): number {
-    const raw = this.configService.get<string>('RECONCILE_RECHECK_MIN_AGE_MS');
-    const parsed = Number(raw);
-    return raw !== undefined && Number.isFinite(parsed) && parsed >= 0
-      ? parsed
-      : CHAIN_RECHECK_MIN_AGE_MS_DEFAULT;
-  }
   private batchSize(): number {
     const raw = this.configService.get<string>('RECONCILE_BATCH_SIZE');
     const parsed = Number(raw);

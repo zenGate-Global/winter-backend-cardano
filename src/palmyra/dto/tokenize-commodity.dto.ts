@@ -4,11 +4,11 @@ import { SpendCommodityResponseDto } from './spend-commodity.dto';
 
 export class TokenizeCommodityDto {
   @ApiProperty({
-    description: 'token name utf8 string',
-    example: 'coffee tracking singleton',
+    description: 'token name as utf8 string, 1..32 bytes',
+    example: 'coffee-singleton',
   })
   @IsString()
-  @IsByteLength(0, 32)
+  @IsByteLength(1, 32)
   tokenName: string;
 
   @ApiProperty({

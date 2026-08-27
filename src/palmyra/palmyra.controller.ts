@@ -6,7 +6,9 @@ import {
   HttpException,
   HttpStatus,
   Post,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { PalmyraService } from './palmyra.service';
 import {
   deriveRequestFingerprint,
@@ -19,29 +21,25 @@ import {
   CommodityDetailsResponseDto,
 } from './dto/commodity-details.dto';
 import {
+  ApiAcceptedResponse,
   ApiBadRequestResponse,
-  ApiCreatedResponse,
   ApiOkResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { ErrorResponse } from './dto/error.dto';
-import {
-  SpendCommodityDto,
-  SpendCommodityResponseDto,
-} from './dto/spend-commodity.dto';
-import {
-  TokenizeCommodityDto,
-  TokenizeCommodityResponseDto,
-} from './dto/tokenize-commodity.dto';
-import {
-  RecreateCommodityDto,
-  RecreateCommodityResponseDto,
-} from './dto/recreate-commodity.dto';
+import { SpendCommodityDto } from './dto/spend-commodity.dto';
+import { TokenizeCommodityDto } from './dto/tokenize-commodity.dto';
+import { RecreateCommodityDto } from './dto/recreate-commodity.dto';
+import { OperationResponseDto } from './dto/operation-response.dto';
+import { CheckService } from '../check/check.service';
 
 @ApiTags('Blockchain')
 @Controller('palmyra')
 export class PalmyraController {
-  constructor(private readonly palmyraService: PalmyraService) {}
+  constructor(
+    private readonly palmyraService: PalmyraService,
+    private readonly checkService: CheckService,
+  ) {}
 
   // A caller may send an `Idempotency-Key` header. The same key on the same
   // route always resolves to the same job, so a retry of a request whose
@@ -55,6 +53,32 @@ export class PalmyraController {
       );
     }
     return resolveJobId(scope, key);
+  }
+
+  private statusUrl(id: string): string {
+    return `/check/${id}`;
+  }
+
+  private async operationResponse(
+    id: string,
+    res: Response,
+  ): Promise<OperationResponseDto> {
+    let status: string = 'PENDING';
+    try {
+      const row = await this.checkService.findOne(id);
+      status = row.status ?? 'PENDING';
+    } catch {
+      // row not yet visible, treat as pending
+    }
+    const url = this.statusUrl(id);
+    res.setHeader('Location', url);
+    res.setHeader('Retry-After', '5');
+    return {
+      message: 'accepted',
+      id,
+      status: status as unknown as OperationResponseDto['status'],
+      statusUrl: url,
+    };
   }
 
   @Post('commodityDetails')
@@ -84,9 +108,10 @@ export class PalmyraController {
   }
 
   @Post('spendCommodity')
-  @ApiCreatedResponse({
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiAcceptedResponse({
     description: 'returns queue data associated to spending',
-    type: SpendCommodityResponseDto,
+    type: OperationResponseDto,
   })
   @ApiBadRequestResponse({
     description: 'returns error message',
@@ -95,7 +120,8 @@ export class PalmyraController {
   async spendCommodity(
     @Body() message: SpendCommodityDto,
     @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<SpendCommodityResponseDto> {
+    @Res({ passthrough: true }) res?: Response,
+  ): Promise<OperationResponseDto> {
     const id = this.jobId('spend-commodity', idempotencyKey);
     const requestFingerprint = idempotencyKey?.trim()
       ? deriveRequestFingerprint(message)
@@ -108,13 +134,14 @@ export class PalmyraController {
       },
       requestFingerprint,
     );
-    return { message: 'success', id };
+    return this.operationResponse(id, res as Response);
   }
 
   @Post('tokenizeCommodity')
-  @ApiCreatedResponse({
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiAcceptedResponse({
     description: 'returns queue data associated to tokenizing',
-    type: TokenizeCommodityResponseDto,
+    type: OperationResponseDto,
   })
   @ApiBadRequestResponse({
     description: 'returns error message',
@@ -123,7 +150,8 @@ export class PalmyraController {
   async tokenizeCommodity(
     @Body() message: TokenizeCommodityDto,
     @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<{ message: string; id: string }> {
+    @Res({ passthrough: true }) res?: Response,
+  ): Promise<OperationResponseDto> {
     const id = this.jobId('tokenize-commodity', idempotencyKey);
     const requestFingerprint = idempotencyKey?.trim()
       ? deriveRequestFingerprint(message)
@@ -136,13 +164,14 @@ export class PalmyraController {
       },
       requestFingerprint,
     );
-    return { message: 'success', id };
+    return this.operationResponse(id, res as Response);
   }
 
   @Post('recreateCommodity')
-  @ApiCreatedResponse({
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiAcceptedResponse({
     description: 'returns queue data associated to recreating',
-    type: RecreateCommodityResponseDto,
+    type: OperationResponseDto,
   })
   @ApiBadRequestResponse({
     description: 'returns error message',
@@ -151,7 +180,8 @@ export class PalmyraController {
   async recreateCommodity(
     @Body() message: RecreateCommodityDto,
     @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<{ message: string; id: string }> {
+    @Res({ passthrough: true }) res?: Response,
+  ): Promise<OperationResponseDto> {
     const utxoLen = message.utxos.length;
     const dataLen = message.newDataReferences.length;
     if (utxoLen !== dataLen) {
@@ -173,6 +203,6 @@ export class PalmyraController {
       },
       requestFingerprint,
     );
-    return { message: 'success', id };
+    return this.operationResponse(id, res as Response);
   }
 }

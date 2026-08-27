@@ -40,10 +40,24 @@ import { ApiKeyGuard } from './api-key.guard';
           config.PORT = '4000';
         }
         if (
-          !config.TRANSACTION_RETRY_ATTEMPTS ||
-          String(config.TRANSACTION_RETRY_ATTEMPTS).trim() === ''
+          config.CHAIN_CONFIRMATION_DEPTH !== undefined &&
+          config.CHAIN_CONFIRMATION_DEPTH !== null
         ) {
-          config.TRANSACTION_RETRY_ATTEMPTS = '3';
+          const raw = String(config.CHAIN_CONFIRMATION_DEPTH);
+          if (raw === '') {
+            // empty treated as absent, use genesis
+          } else if (!/^[1-9][0-9]*$/.test(raw)) {
+            throw new Error(
+              'CHAIN_CONFIRMATION_DEPTH must be a positive safe integer',
+            );
+          } else {
+            const num = Number(raw);
+            if (!Number.isSafeInteger(num) || num <= 0) {
+              throw new Error(
+                'CHAIN_CONFIRMATION_DEPTH must be a positive safe integer',
+              );
+            }
+          }
         }
         const network = String(config.NETWORK).toLowerCase();
         const bfKey = String(config.BLOCKFROST_KEY);

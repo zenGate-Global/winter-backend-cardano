@@ -9,10 +9,8 @@ import {
   recreateCommodityJob,
   spendCommodityJob,
   tokenizeCommodityJob,
-  UtxoQuery,
 } from '../types/job.dto.js';
 import { BlockfrostProvider } from '@meshsdk/core';
-import { buildMint, buildRecreate, buildSpend } from './palmyra.builder.js';
 import { ConfigService } from '@nestjs/config';
 import { CheckService } from '../check/check.service.js';
 import { EventFactory, ObjectDatumFields } from '@zengate/winter-cardano-mesh';
@@ -44,8 +42,6 @@ export class PalmyraService {
       ZENGATE_MNEMONIC(),
       this.provider,
       this.provider,
-      // The dry run must use the same budgets as the real build, or a request
-      // that the consumer will reject still returns 201.
       this.provider,
     );
   }
@@ -94,38 +90,6 @@ export class PalmyraService {
         cause: error,
       });
     }
-  }
-
-  private async buildUtxoRef(
-    contractAddresses: string[],
-  ): Promise<
-    Record<
-      string,
-      { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
-    >
-  > {
-    const utxoRef: Record<
-      string,
-      { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
-    > = {};
-    for (const cA of contractAddresses) {
-      try {
-        const deployment =
-          await this.deploymentService.getDeploymentByContractAddress(cA);
-        utxoRef[cA] = {
-          singletonScript: undefined,
-          objectEventScript: {
-            txHash: deployment.deploymentTxHash,
-            outputIndex: deployment.deploymentOutputIndex,
-          },
-        };
-      } catch (error) {
-        this.logger.warn(
-          `Deployment not found for contract address ${cA}: ${error}`,
-        );
-      }
-    }
-    return utxoRef;
   }
 
   private async findExistingCheck(id: string): Promise<Check | null> {
@@ -188,40 +152,23 @@ export class PalmyraService {
         }
       }
 
-      const utxoPromises = jobArguments.utxos.map((utxo) =>
-        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
-      );
-
-      const fetchedUtxos = await Promise.all(utxoPromises);
-
-      const contractAddresses = fetchedUtxos.map((utxoArray) => {
-        const utxo = utxoArray?.[0];
-        return utxo.output.address;
-      });
-
-      const utxoRef = await this.buildUtxoRef(contractAddresses);
-
-      const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
+      // Enrichment belongs in the serialized worker; keep request thread free
+      // of provider lookups and deterministic builds.
       if (
         await this.alreadyAccepted(
           'spend-commodity',
-          jobArgumentsWithUtxoRef,
+          jobArguments,
           requestFingerprint,
         )
       ) {
         return;
       }
-      await buildSpend(this.factory, { data: jobArgumentsWithUtxoRef }, false);
-      await this.createCheckAndEnqueue(
-        'spend-commodity',
-        jobArgumentsWithUtxoRef,
-        {
-          id: jobArgumentsWithUtxoRef.id,
-          type: CheckType.SPEND,
-          status: CheckStatus.PENDING,
-          requestFingerprint,
-        },
-      );
+      await this.createCheckAndEnqueue('spend-commodity', jobArguments, {
+        id: jobArguments.id,
+        type: CheckType.SPEND,
+        status: CheckStatus.PENDING,
+        requestFingerprint,
+      });
     } catch (error) {
       if (error instanceof ConflictException) {
         throw error;
@@ -249,7 +196,6 @@ export class PalmyraService {
       return;
     }
     try {
-      await buildMint(this.factory, { data: jobArguments }, false);
       await this.createCheckAndEnqueue('tokenize-commodity', jobArguments, {
         id: jobArguments.id,
         type: CheckType.TOKENIZE,
@@ -289,49 +235,26 @@ export class PalmyraService {
         }
       }
 
-      const utxoPromises = jobArguments.utxos.map((utxo) =>
-        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
-      );
-
-      const fetchedUtxos = await Promise.all(utxoPromises);
-
-      const contractAddresses = fetchedUtxos.map((utxoArray) => {
-        const utxo = utxoArray?.[0];
-        return utxo.output.address;
-      });
-
-      const utxoRef = await this.buildUtxoRef(contractAddresses);
-
-      const jobArgumentsWithUtxoRef = { ...jobArguments, utxoRef: utxoRef };
       if (
         await this.alreadyAccepted(
           'recreate-commodity',
-          jobArgumentsWithUtxoRef,
+          jobArguments,
           requestFingerprint,
         )
       ) {
         return;
       }
-      await buildRecreate(
-        this.factory,
-        { data: jobArgumentsWithUtxoRef },
-        false,
-      );
-      await this.createCheckAndEnqueue(
-        'recreate-commodity',
-        jobArgumentsWithUtxoRef,
-        {
-          id: jobArgumentsWithUtxoRef.id,
-          type: CheckType.RECREATE,
-          status: CheckStatus.PENDING,
-          additionalInfo: {
-            utxos: jobArgumentsWithUtxoRef.utxos,
-            newDataReferences: jobArgumentsWithUtxoRef.newDataReferences,
-            utxoRef: jobArgumentsWithUtxoRef.utxoRef,
-          },
-          requestFingerprint,
+      await this.createCheckAndEnqueue('recreate-commodity', jobArguments, {
+        id: jobArguments.id,
+        type: CheckType.RECREATE,
+        status: CheckStatus.PENDING,
+        additionalInfo: {
+          utxos: jobArguments.utxos,
+          newDataReferences: jobArguments.newDataReferences,
+          utxoRef: jobArguments.utxoRef,
         },
-      );
+        requestFingerprint,
+      });
     } catch (error) {
       if (error instanceof ConflictException) {
         throw error;
@@ -413,12 +336,26 @@ export class PalmyraService {
   // Postgres reports a unique or primary key violation as 23505. TypeORM wraps
   // the driver error, so check both the wrapper and the driver payload.
   private isDuplicateKey(error: unknown): boolean {
-    const candidate = error as {
-      code?: unknown;
-      driverError?: { code?: unknown };
-    };
-    return (
-      candidate?.code === '23505' || candidate?.driverError?.code === '23505'
-    );
+    if (!error || typeof error !== 'object') return false;
+    if ('code' in error && (error as Record<string, unknown>).code === '23505')
+      return true;
+    if (
+      'driverError' in error &&
+      typeof (error as Record<string, unknown>).driverError === 'object' &&
+      (error as Record<string, unknown>).driverError !== null &&
+      'code' in
+        ((error as Record<string, unknown>).driverError as Record<
+          string,
+          unknown
+        >) &&
+      (
+        (error as Record<string, unknown>).driverError as Record<
+          string,
+          unknown
+        >
+      ).code === '23505'
+    )
+      return true;
+    return false;
   }
 }
