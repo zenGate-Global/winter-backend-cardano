@@ -272,11 +272,26 @@ public, so record rules and invariants here. Report a working attack in chat.
   confirmation, and error together. CONFIRMED is never overwritten. Stored
   depth is the observation at `confirmedAt`.
 - **An evaluator must be wired into `EventFactory`.** Without one every redeemer declares the fixed default budget of mem 7,000,000. Two of those reach the preview cap of 17,500,000, so a two-commodity spend and a three-commodity recreate are both rejected with `ExUnitsTooBigUTxO`. Measured on chain, the real cost is 17 to 56 times smaller than the default.
+- **A guarded write must never name the table inside a TypeORM update.** The
+  table `check` is a reserved SQL word, and an update builder emits no alias.
+  A guard such as `check.txid` reaches Postgres as bare `check.txid`, and the
+  statement dies with `syntax error at or near "check"`. Every guarded write
+  then fails after the transaction already reached the chain, the reconciler
+  sweep fails the same way, and a landed mint stays QUEUED for ever. Write the
+  guard on the column alone, and quote a camel case column, for example
+  `"signedTx"`. `pnpm check:reserved-identifier` proves each guarded write on a
+  live database.
 
 ### Configuration
 
 - **Production and staging deploy with `--min-instances` set to 1.** Their queue
   worker and reconciler stay active without an incoming request.
+- **`CHAIN_CONFIRMATION_DEPTH` selects the finality threshold.** An empty value
+  falls back to the genesis security parameter, which is 2160 blocks on preview
+  and on mainnet. A preview block arrives about every 20 seconds, so a fallback
+  deploy confirms nothing for about 12 hours. The deploy workflow now passes the
+  environment variable, so a test environment can set a small value. Production
+  must keep the fallback, or a value that a chain expert approves.
 
 - **The UTxO hash decorator requires 64 characters.** The former rule required
   62 characters. Correcting it was safe because nested validation did not run
