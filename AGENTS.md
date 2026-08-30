@@ -286,6 +286,12 @@ public, so record rules and invariants here. Report a working attack in chat.
 
 - **Production and staging deploy with `--min-instances` set to 1.** Their queue
   worker and reconciler stay active without an incoming request.
+- **`CHAIN_CONFIRMATION_DEPTH` selects the finality threshold.** An empty value
+  falls back to the genesis security parameter, which is 2160 blocks on preview
+  and on mainnet. A preview block arrives about every 20 seconds, so a fallback
+  deploy confirms nothing for about 12 hours. The deploy workflow now passes the
+  environment variable, so a test environment can set a small value. Production
+  must keep the fallback, or a value that a chain expert approves.
 
 - **The UTxO hash decorator requires 64 characters.** The former rule required
   62 characters. Correcting it was safe because nested validation did not run
