@@ -142,9 +142,9 @@ export class CheckService {
           error: null,
         } as unknown as Record<string, unknown>)
         .where('id = :id', { id })
-        .andWhere('LOWER(check.txid) = :txid', { txid: normalized })
-        .andWhere('check.confirmation IS NULL')
-        .andWhere('check.status IN (:...eligible)', {
+        .andWhere('LOWER("txid") = :txid', { txid: normalized })
+        .andWhere('"confirmation" IS NULL')
+        .andWhere('"status" IN (:...eligible)', {
           eligible: [CheckStatus.QUEUED, CheckStatus.ERROR],
         })
         .execute();
@@ -173,10 +173,10 @@ export class CheckService {
         error: null,
       })
       .where('id = :id', { id })
-      .andWhere('LOWER(check.txid) = :txid', { txid: normalized })
-      .andWhere('check.signedTx = :signedTx', { signedTx })
-      .andWhere('check.confirmation IS NULL')
-      .andWhere('check.status IN (:...eligible)', {
+      .andWhere('LOWER("txid") = :txid', { txid: normalized })
+      .andWhere('"signedTx" = :signedTx', { signedTx })
+      .andWhere('"confirmation" IS NULL')
+      .andWhere('"status" IN (:...eligible)', {
         eligible: [CheckStatus.PENDING, CheckStatus.QUEUED, CheckStatus.ERROR],
       })
       .execute();
@@ -206,9 +206,9 @@ export class CheckService {
         txid: normalized,
       })
       .where('id = :id', { id })
-      .andWhere('LOWER(check.txid) = :txid', { txid: normalized })
-      .andWhere('check.confirmation IS NULL')
-      .andWhere('check.status IN (:...eligible)', {
+      .andWhere('LOWER("txid") = :txid', { txid: normalized })
+      .andWhere('"confirmation" IS NULL')
+      .andWhere('"status" IN (:...eligible)', {
         eligible: [
           CheckStatus.SUBMITTED,
           CheckStatus.SUCCESS,
@@ -240,12 +240,12 @@ export class CheckService {
         unknown
       >)
       .where('id = :id', { id })
-      .andWhere('check.status = :status', { status: CheckStatus.SUBMITTED })
-      .andWhere('LOWER(check.txid) = :txid', { txid: normalized })
-      .andWhere('check.signedTx = :currentSignedTx', {
+      .andWhere('"status" = :status', { status: CheckStatus.SUBMITTED })
+      .andWhere('LOWER("txid") = :txid', { txid: normalized })
+      .andWhere('"signedTx" = :currentSignedTx', {
         currentSignedTx,
       })
-      .andWhere('check.confirmation IS NULL')
+      .andWhere('"confirmation" IS NULL')
       .execute();
     if ((result.affected ?? 0) > 0) return;
     const row = await this.checkRepository.findOneBy({ id });
@@ -273,9 +273,9 @@ export class CheckService {
         txid: normalized,
       } as unknown as Record<string, unknown>)
       .where('id = :id', { id })
-      .andWhere('LOWER(check.txid) = :txid', { txid: normalized })
-      .andWhere('check.confirmation IS NULL')
-      .andWhere('check.status != :confirmed', {
+      .andWhere('LOWER("txid") = :txid', { txid: normalized })
+      .andWhere('"confirmation" IS NULL')
+      .andWhere('"status" != :confirmed', {
         confirmed: CheckStatus.CONFIRMED,
       })
       .execute();
