@@ -33,6 +33,8 @@ import {
 } from 'src/constants';
 import { TxQueueJob } from './palmyra-queue.types.js';
 import { CSLSerializer } from '@meshsdk/core-csl';
+import { NoConfirmedFundingUtxoError } from './no-confirmed-funding-utxo.error';
+import { InsufficientConfirmedFundingError } from './insufficient-confirmed-funding.error';
 
 type StoredDeployment = {
   signedTx: string;
@@ -104,8 +106,77 @@ export class PalmyraConsumerService {
     );
   }
 
+  private storedErrorMessage(error: unknown): string {
+    if (error && typeof error === 'object') {
+      const providerError = error as {
+        name?: unknown;
+        status_code?: unknown;
+        code?: unknown;
+      };
+      const code = providerError.code;
+      if (
+        providerError.name === 'BlockfrostClientError' ||
+        providerError.name === 'BlockfrostServerError' ||
+        typeof providerError.status_code === 'number' ||
+        (typeof code === 'string' &&
+          (code.startsWith('ECONN') ||
+            code === 'ETIMEDOUT' ||
+            code === 'EHOSTUNREACH' ||
+            code === 'ENETUNREACH' ||
+            code === 'EPIPE' ||
+            code === 'EAI_AGAIN' ||
+            code === 'ENOTFOUND' ||
+            code === 'ERR_GOT_REQUEST_ERROR'))
+      ) {
+        return 'provider request failed';
+      }
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    if (/"status(?:_code)?"\s*:\s*\d{3}/.test(message)) {
+      return 'provider request failed';
+    }
+    return message;
+  }
+
   private isTransientBuildError(error: unknown): boolean {
+    if (
+      error instanceof NoConfirmedFundingUtxoError ||
+      error instanceof InsufficientConfirmedFundingError
+    )
+      return true;
+    if (error && typeof error === 'object') {
+      const statusCode = (error as { status_code?: unknown }).status_code;
+      if (
+        typeof statusCode === 'number' &&
+        (statusCode === 429 || (statusCode >= 500 && statusCode < 600))
+      )
+        return true;
+
+      if ((error as { name?: unknown }).name === 'BlockfrostClientError') {
+        return true;
+      }
+      const transportCode = (error as { code?: unknown }).code;
+      if (
+        typeof transportCode === 'string' &&
+        (transportCode.startsWith('ECONN') ||
+          transportCode === 'ETIMEDOUT' ||
+          transportCode === 'EHOSTUNREACH' ||
+          transportCode === 'ENETUNREACH' ||
+          transportCode === 'EPIPE' ||
+          transportCode === 'EAI_AGAIN' ||
+          transportCode === 'ENOTFOUND' ||
+          transportCode === 'ERR_GOT_REQUEST_ERROR')
+      )
+        return true;
+    }
     const msg = error instanceof Error ? error.message : String(error);
+    const serializedStatus = msg.match(/"status(?:_code)?"\s*:\s*(\d{3})/);
+    if (serializedStatus) {
+      const statusCode = Number(serializedStatus[1]);
+      if (statusCode === 429 || (statusCode >= 500 && statusCode < 600)) {
+        return true;
+      }
+    }
     if (/"status(?:_code)?"\s*:\s*404/.test(msg)) return true;
     if (/has not been found/i.test(msg)) return true;
     if (/evaluate redeemers failed|tx evaluation fail/i.test(msg)) return true;
@@ -162,6 +233,16 @@ export class PalmyraConsumerService {
         }
         return result;
       } catch (error) {
+        if (error instanceof NoConfirmedFundingUtxoError) {
+          this.logger.warn(
+            `No confirmed funding UTxO: ${error.confirmedCount} confirmed, ${error.unconfirmedCount} unconfirmed`,
+          );
+          throw error;
+        }
+        if (error instanceof InsufficientConfirmedFundingError) {
+          this.logger.warn(error.message);
+          throw error;
+        }
         lastError = error instanceof Error ? error : new Error(String(error));
         this.logger.warn(
           `Attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`,
@@ -373,9 +454,7 @@ export class PalmyraConsumerService {
     operation: string,
     error: unknown,
   ): Promise<void> {
-    const message = `${operation} error: ${
-      error instanceof Error ? error.message : String(error)
-    }`;
+    const message = `${operation} error: ${this.storedErrorMessage(error)}`;
     const check = await this.checkDb.findOne(id);
     if (!check.txid) {
       if (this.isTransientBuildError(error)) {
@@ -403,7 +482,7 @@ export class PalmyraConsumerService {
   }
 
   async markRetriesExhausted(id: string, error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = this.storedErrorMessage(error);
     const check = await this.checkDb.findOne(id).catch(() => null);
     if (
       !check ||
@@ -497,6 +576,16 @@ export class PalmyraConsumerService {
           return;
         }
       }
+    }
+
+    if (error instanceof NoConfirmedFundingUtxoError) {
+      const reason = `No confirmed funding UTxO: ${error.confirmedCount} confirmed, ${error.unconfirmedCount} unconfirmed`;
+      await this.checkDb.update(id, {
+        status: CheckStatus.ERROR,
+        error: reason,
+      });
+      this.logger.warn(`Retries exhausted for ${id}: ${reason}`);
+      return;
     }
 
     await this.checkDb.update(id, {
@@ -673,6 +762,9 @@ export class PalmyraConsumerService {
               mintInputUtxos,
             );
           } catch (deployError) {
+            if (this.isTransientBuildError(deployError)) {
+              throw deployError;
+            }
             this.logger.error(
               `deployment bookkeeping failed after mint ${txid}: ${deployError}`,
             );
@@ -712,6 +804,9 @@ export class PalmyraConsumerService {
           mintInputUtxos,
         );
       } catch (deployError) {
+        if (this.isTransientBuildError(deployError)) {
+          throw deployError;
+        }
         this.logger.error(
           `deployment bookkeeping failed after mint ${txid}: ${deployError}`,
         );

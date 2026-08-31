@@ -14,8 +14,26 @@ import { UtxoService } from './palymra.utxo.service';
 import { Logger } from '@nestjs/common';
 import { TxParser } from '@meshsdk/core';
 import { CSLSerializer } from '@meshsdk/core-csl';
+import { NoConfirmedFundingUtxoError } from './no-confirmed-funding-utxo.error';
+import { InsufficientConfirmedFundingError } from './insufficient-confirmed-funding.error';
 
 const logger = new Logger('Builder');
+
+const MESH_INSUFFICIENT_FUNDING =
+  'Not enough UTxOs to cover the required value.';
+
+async function buildWithConfirmedFunding<T>(
+  build: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await build();
+  } catch (error) {
+    if (error instanceof Error && error.message === MESH_INSUFFICIENT_FUNDING) {
+      throw new InsufficientConfirmedFundingError(error);
+    }
+    throw error;
+  }
+}
 
 export async function buildMint(
   factory: EventFactory,
@@ -41,14 +59,12 @@ export async function buildMint(
   };
   const objectDatum = EventFactory.getObjectDatumFromParams(params);
 
-  const finalUtxos = await getFundingUtxos(factory, submit);
+  const finalUtxos = await getConfirmedFundingUtxos(factory);
 
   validateCollateral(factory, finalUtxos);
 
-  const unsignedTx = await factory.mintSingleton(
-    job.data.tokenName,
-    finalUtxos,
-    objectDatum,
+  const unsignedTx = await buildWithConfirmedFunding(() =>
+    factory.mintSingleton(job.data.tokenName, finalUtxos, objectDatum),
   );
 
   const serializer = new CSLSerializer();
@@ -56,12 +72,10 @@ export async function buildMint(
     serializer,
     factory.fetcher as unknown as ConstructorParameters<typeof TxParser>[1],
   );
-  // Hand the parser the UTxOs we already hold. Without them it re-resolves
-  // every input, collateral and reference outref through the fetcher, and
-  // Blockfrost only knows confirmed transactions, so a build that chains onto
-  // an unconfirmed change output fails here with a 404 even though the build
-  // itself succeeded. This is what caps mint throughput at the number of
-  // confirmed wallet UTxOs.
+  // Hand the parser the confirmed UTxOs already held by this build. Without
+  // them it re-resolves every input through the fetcher. The evaluator has no
+  // equivalent input set and resolves independently through Blockfrost, which
+  // is why every funding and collateral UTxO above must already be confirmed.
   const txBuilderBody = await txParser.parse(unsignedTx, finalUtxos);
   const singleton = txBuilderBody.outputs[0].amount.find(
     (token) => token.unit !== 'lovelace',
@@ -94,16 +108,18 @@ export async function buildDeployRef(
   deploymentOutputIndex: number;
   signedTx: string;
 } | void> {
-  const finalUtxos = await getFundingUtxos(factory, submit);
+  const finalUtxos = await getConfirmedFundingUtxos(factory);
 
   validateCollateral(factory, finalUtxos);
 
-  const unsignedTx = await factory.deployReference(
-    job.data.deployAddress,
-    job.data.tokenName,
-    job.data.utxoRef,
-    finalUtxos,
-    false,
+  const unsignedTx = await buildWithConfirmedFunding(() =>
+    factory.deployReference(
+      job.data.deployAddress,
+      job.data.tokenName,
+      job.data.utxoRef,
+      finalUtxos,
+      false,
+    ),
   );
 
   if (!submit) {
@@ -164,7 +180,7 @@ export async function buildRecreate(
   }
   const refMap = new Map();
 
-  const finalUtxos = await getFundingUtxos(factory, submit);
+  const finalUtxos = await getConfirmedFundingUtxos(factory);
 
   validateCollateral(factory, finalUtxos);
 
@@ -203,12 +219,8 @@ export async function buildRecreate(
     }
   });
 
-  const completeTx = await factory.recreate(
-    walletAddress,
-    finalUtxos,
-    utxos,
-    alignedHex,
-    refMap,
+  const completeTx = await buildWithConfirmedFunding(() =>
+    factory.recreate(walletAddress, finalUtxos, utxos, alignedHex, refMap),
   );
 
   if (!submit) {
@@ -257,15 +269,12 @@ export async function buildSpend(
     }
   }
 
-  const finalUtxos = await getFundingUtxos(factory, submit);
+  const finalUtxos = await getConfirmedFundingUtxos(factory);
 
   validateCollateral(factory, finalUtxos);
 
-  const completeTx = await factory.spend(
-    walletAddress,
-    finalUtxos,
-    utxos,
-    refMap,
+  const completeTx = await buildWithConfirmedFunding(() =>
+    factory.spend(walletAddress, finalUtxos, utxos, refMap),
   );
 
   if (!submit) {
@@ -306,34 +315,53 @@ function excludeReferenceScripts(utxos: UTxO[]): UTxO[] {
   );
 }
 
-// The single funding path. Both branches run through the same filter so a dry
-// run and the real build cannot disagree about which UTxOs are spendable.
-async function getFundingUtxos(
+// The single funding path for every builder. It returns the confirmed subset
+// only, and it never hands the unconfirmed set onward. Two separate routes make
+// that necessary. Mesh coin selection can pick a mempool-only output, and
+// `EventFactory.getCollateralUTxOs` sorts pure-ADA UTxOs descending and takes
+// the largest, which during a burst is the pending change output. The remote
+// evaluator resolves every input through Blockfrost, which knows only confirmed
+// transactions, so either route fails with `CannotCreateEvaluationContext`.
+// The gate is necessary and not sufficient: one small confirmed UTxO passes it
+// and can still fail coin selection with an insufficient balance.
+async function getConfirmedFundingUtxos(
   factory: EventFactory,
-  submit: boolean,
 ): Promise<UTxO[]> {
-  const utxos = submit
-    ? await getWalletUtxosWithRetry(factory, 6)
-    : await factory.getWalletUtxos();
-  return excludeReferenceScripts(utxos);
+  const sets = await getWalletUtxoSetsWithRetry(factory, 6);
+  const filteredConfirmed = excludeReferenceScripts(sets.confirmed);
+  if (filteredConfirmed.length === 0) {
+    throw new NoConfirmedFundingUtxoError(
+      sets.confirmed.length,
+      sets.unconfirmed.length,
+    );
+  }
+  return filteredConfirmed;
 }
 
-async function getWalletUtxosWithRetry(
+async function getWalletUtxoSetsWithRetry(
   winterEvent: EventFactory,
   maxAttempts: number,
-): Promise<UTxO[]> {
+): Promise<{ confirmed: UTxO[]; unconfirmed: UTxO[] }> {
   const utxoService = new UtxoService();
   let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      // Read the mempool first. If a pending transaction confirms between the
+      // snapshots, the later wallet read no longer contains its spent input.
+      // The inverse order can label that stale input as confirmed.
+      const walletAddress = await winterEvent.getWalletAddress();
+      const mempool = await utxoService.flushMempool();
       const walletUtxos = await winterEvent.getWalletUtxos();
       const addresses = [
-        ...new Set(walletUtxos.map((utxo) => utxo.output.address)),
+        ...new Set([
+          walletAddress,
+          ...walletUtxos.map((utxo) => utxo.output.address),
+        ]),
       ];
       // `return await` on purpose: the await must sit inside the try so a
       // rejection is caught and retried rather than escaping to the caller.
-      return await utxoService.getAllUtxos(walletUtxos, addresses);
+      return await utxoService.getUtxoSets(walletUtxos, addresses, mempool);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       logger.error(
@@ -349,6 +377,6 @@ async function getWalletUtxosWithRetry(
   }
 
   throw (
-    lastError ?? new Error('getWalletUtxosWithRetry exhausted without error')
+    lastError ?? new Error('getWalletUtxoSetsWithRetry exhausted without error')
   );
 }

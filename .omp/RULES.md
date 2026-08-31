@@ -44,15 +44,22 @@ or mint a duplicate token that cannot be recalled.
 - **Never let a reference-script output fund a transaction.** Spending it
   destroys the deployment and breaks every later recreate and spend. Mesh
   `1.9.1` also under-prices such an input and the node rejects the transaction.
-  `getFundingUtxos` drops any UTxO that carries `scriptRef` or `scriptHash`.
+  `getConfirmedFundingUtxos` drops any UTxO that carries `scriptRef` or `scriptHash`.
   Never remove that filter to reclaim the locked ADA.
 - **Never let a post-submit step downgrade a row to ERROR.** Write SUBMITTED
   after a hash-matched submit. Do this before deployment or bookkeeping. A
   caller polls for SUBMITTED and then CONFIRMED. An ERROR after mint submission
   causes another mint.
-- **Never call `TxParser.parse` or the evaluator without held UTxOs.** Both
-  operations resolve outrefs through Blockfrost. Blockfrost knows only confirmed
-  transactions. A chained build fails after an earlier build succeeds.
+- **Never call `TxParser.parse` without held UTxOs.** It resolves outrefs through
+  Blockfrost, which knows only confirmed transactions.
+- **The evaluator receives no held UTxOs.** It resolves every input through
+  Blockfrost. Every builder must expose only confirmed funding and collateral
+  UTxOs.
+- **Read the mempool before the wallet UTxO snapshot.** The inverse order can
+  label an input confirmed after its pending spend confirms.
+- **Never treat confirmed-funding insufficiency as terminal before the final
+  queue attempt.** Wrap Mesh's exact insufficient-value error as a typed
+  funding deferral.
 - **Never remove the evaluator from `EventFactory`.** Without it every redeemer
   declares mem 7,000,000, and two of those exceed the preview cap.
 - **Never treat a pg-boss `send` that returns null as a failure.** That null is
