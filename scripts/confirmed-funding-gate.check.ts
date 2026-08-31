@@ -220,6 +220,7 @@ async function runBuilder(
 
 async function checkConsumerDeferral(): Promise<void> {
   const warnings: string[] = [];
+  const errors: string[] = [];
   const updates: { id: string; status?: CheckStatus; error?: string }[] = [];
   const consumer = Object.create(
     PalmyraConsumerService.prototype,
@@ -227,7 +228,7 @@ async function checkConsumerDeferral(): Promise<void> {
   consumer.logger = {
     warn: (message) => warnings.push(message),
     log: () => undefined,
-    error: () => undefined,
+    error: (message) => errors.push(message),
   };
   consumer.checkDb = {
     findOne: async () => ({
@@ -369,6 +370,10 @@ async function checkConsumerDeferral(): Promise<void> {
       error: 'retries exhausted: provider request failed',
     },
   ]);
+  assert.equal(
+    errors.at(-1),
+    'Retries exhausted for mint-job: provider request failed',
+  );
 
   updates.length = 0;
   await consumer.markRetriesExhausted('mint-job', refusal);
@@ -380,6 +385,10 @@ async function checkConsumerDeferral(): Promise<void> {
     },
   ]);
 
+  assert.equal(
+    errors.at(-1),
+    'Retries exhausted for mint-job: No confirmed funding UTxO: 0 confirmed, 2 unconfirmed',
+  );
   updates.length = 0;
   await consumer.markRetriesExhausted('mint-job', insufficient);
   assert.deepEqual(updates, [
@@ -390,8 +399,119 @@ async function checkConsumerDeferral(): Promise<void> {
         'retries exhausted: Confirmed funding UTxOs cannot cover the transaction',
     },
   ]);
+  assert.equal(
+    errors.at(-1),
+    'Retries exhausted for mint-job: Confirmed funding UTxOs cannot cover the transaction',
+  );
+  assert.equal(errors.length, 3);
 }
+async function checkConsumerOperationLogging(): Promise<void> {
+  const operations = [
+    {
+      name: 'minting',
+      id: tokenizeJob.id,
+      run: (consumer: any) => consumer.tokenizeCommodity(tokenizeJob),
+    },
+    {
+      name: 'recreating',
+      id: recreateJob.id,
+      run: (consumer: any) => consumer.recreateCommodity(recreateJob),
+    },
+    {
+      name: 'spending',
+      id: spendJob.id,
+      run: (consumer: any) => consumer.spendCommodity(spendJob),
+    },
+  ] as const;
+  const deferrals = [
+    new NoConfirmedFundingUtxoError(0, 2),
+    new InsufficientConfirmedFundingError(
+      new Error('Not enough UTxOs to cover the required value.'),
+    ),
+  ];
 
+  for (const operation of operations) {
+    for (const deferral of deferrals) {
+      const warnings: string[] = [];
+      const errors: string[] = [];
+      const updates: { status?: CheckStatus; error?: string }[] = [];
+      const consumer = Object.create(PalmyraConsumerService.prototype) as any;
+      consumer.logger = {
+        warn: (message: string) => warnings.push(message),
+        log: () => undefined,
+        error: (message: string) => errors.push(message),
+      };
+      consumer.handleExistingTx = async () => {
+        throw deferral;
+      };
+      consumer.checkDb = {
+        findOne: async () => ({
+          status: CheckStatus.QUEUED,
+          txid: null,
+          signedTx: null,
+        }),
+        update: async (
+          _id: string,
+          patch: { status?: CheckStatus; error?: string },
+        ) => {
+          updates.push(patch);
+        },
+      };
+
+      await assert.rejects(
+        operation.run(consumer),
+        (error: unknown) => error === deferral,
+      );
+      assert.deepEqual(errors, []);
+      assert.deepEqual(warnings, [
+        `Deferred ${operation.name}: ${deferral.message}`,
+        `Transient build failure for ${operation.id}, returning to the queue: ${operation.name} error: ${deferral.message}`,
+      ]);
+      assert.deepEqual(updates, [
+        { error: `${operation.name} error: ${deferral.message}` },
+      ]);
+    }
+
+    const fatal = new Error('ordinary fatal failure');
+    const warnings: string[] = [];
+    const errors: string[] = [];
+    const updates: { status?: CheckStatus; error?: string }[] = [];
+    const consumer = Object.create(PalmyraConsumerService.prototype) as any;
+    consumer.logger = {
+      warn: (message: string) => warnings.push(message),
+      log: () => undefined,
+      error: (message: string) => errors.push(message),
+    };
+    consumer.handleExistingTx = async () => {
+      throw fatal;
+    };
+    consumer.checkDb = {
+      findOne: async () => ({
+        status: CheckStatus.QUEUED,
+        txid: null,
+        signedTx: null,
+      }),
+      update: async (
+        _id: string,
+        patch: { status?: CheckStatus; error?: string },
+      ) => {
+        updates.push(patch);
+      },
+    };
+
+    await operation.run(consumer);
+    assert.deepEqual(warnings, []);
+    assert.deepEqual(errors, [
+      `Error ${operation.name}: Error: ordinary fatal failure`,
+    ]);
+    assert.deepEqual(updates, [
+      {
+        status: CheckStatus.ERROR,
+        error: `${operation.name} error: ordinary fatal failure`,
+      },
+    ]);
+  }
+}
 async function checkPostSubmitDeploymentDeferral(): Promise<void> {
   for (const shortage of [
     new NoConfirmedFundingUtxoError(0, 1),
@@ -404,13 +524,15 @@ async function checkPostSubmitDeploymentDeferral(): Promise<void> {
       const signedTx = 'stored-signed-cbor';
       let deploymentCalls = 0;
       let submitCalls = 0;
+      const warnings: string[] = [];
+      const errors: string[] = [];
       let failureCalls = 0;
       let transactionWrites = 0;
       const consumer = Object.create(PalmyraConsumerService.prototype) as any;
       consumer.logger = {
-        warn: () => undefined,
+        warn: (message: string) => warnings.push(message),
         log: () => undefined,
-        error: () => undefined,
+        error: (message: string) => errors.push(message),
       };
       consumer.handleExistingTx = async () => ({
         kind: 'existing',
@@ -462,6 +584,8 @@ async function checkPostSubmitDeploymentDeferral(): Promise<void> {
         consumer.tokenizeCommodity(tokenizeJob),
         (error: unknown) => error === shortage,
       );
+      assert.deepEqual(errors, []);
+      assert.deepEqual(warnings, [`Deferred minting: ${shortage.message}`]);
       assert.equal(deploymentCalls, 1);
       assert.equal(submitCalls, status === CheckStatus.QUEUED ? 1 : 0);
       assert.equal(failureCalls, 1);
@@ -672,6 +796,7 @@ async function main(): Promise<void> {
     assert.deepEqual(probe.collateralSources, []);
 
     await checkConsumerDeferral();
+    await checkConsumerOperationLogging();
     await checkPostSubmitDeploymentDeferral();
   } finally {
     UtxoService.prototype.getUtxoSets = originalGetUtxoSets;
