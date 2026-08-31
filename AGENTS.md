@@ -138,9 +138,9 @@ The `@zengate/*` and `@meshsdk/*` packages are the only exceptions.
   transaction with `FeeTooSmallUTxO`. One preview mint fell short by 65911
   lovelace, which is the 4402 byte script at 15 lovelace a byte. The defect is
   narrow. A **reference** input is priced correctly, so recreate and spend are
-  not affected. `getFundingUtxos` removes the one case that triggers it, and
-  mint, recreate, a two-UTxO recreate and spend all pass on `1.9.1` on the
-  preview network. `beta.104` and `1.9.0` price the funding input correctly.
+  not affected. `getConfirmedFundingUtxos` removes the one case that triggers
+  it, and mint, recreate, a two-UTxO recreate and spend all pass on `1.9.1` on
+  the preview network. `beta.104` and `1.9.0` price the funding input correctly.
 - **Production and staging must keep one resident instance.** The queue worker
   and reconciler run inside the process.
 - **The queue is one queue with a singleton policy and a local concurrency of
@@ -204,31 +204,42 @@ public, so record rules and invariants here. Report a working attack in chat.
   `DEPLOYER_ADDRESS` is the service wallet, so the deployed reference script
   lands in the funding UTxO set, and Mesh coin selection spends it. Every later
   recreate and spend then fails with `BadInputsUTxO` until an operator deletes
-  the deployment row and pays about 20 ADA again. `getFundingUtxos` drops any
-  UTxO that carries `scriptRef` or `scriptHash`. This is a guard, not a cure.
-  The cure is a deployer address that the service does not fund from.
-- **Nothing reserves a UTxO.** The queue policy is the only guard. The design
-  chains each job onto the previous unconfirmed change output. `mempoolAll`
-  auto-paginates, but it sees only Blockfrost submissions. Selection must filter
-  pending outputs that another pending transaction spends.
+  the deployment row and pays about 20 ADA again. `getConfirmedFundingUtxos`
+  drops any UTxO that carries `scriptRef` or `scriptHash`. This is a guard, not
+  a cure. The cure is a deployer address that the service does not fund from.
+- **Nothing reserves a UTxO.** The singleton queue policy prevents concurrent
+  builds from selecting the same input. `getUtxoSets` removes confirmed outputs
+  that a pending Blockfrost transaction spends. Every builder then receives
+  only the remaining confirmed set for funding and collateral.
+- **The mempool snapshot must fail closed and precede the wallet snapshot.** An
+  unavailable snapshot does not mean that the mempool is empty. The inverse
+  read order can label an input as confirmed after its pending spend confirms.
+  The wallet UTxO retry loop retries the provider failure before selection.
 - **A fixed ADA balance gate cannot prove a build will work.** Mesh performs
   coin selection and checks collateral for the actual transaction.
 - **The wallet UTxO retry loop is bounded.** Every failed fetch increments the
   counter and delays the next attempt.
-- **Every parser and evaluator call must receive the UTxOs the caller already
-  holds.** `TxParser.parse` and the evaluator both re-resolve every input,
-  collateral and reference outref through Blockfrost, and Blockfrost knows only
-  confirmed transactions. Without the second argument a build that chains onto
-  an unconfirmed change output fails, even though the build itself succeeded.
-  That capped mint throughput at the number of confirmed wallet UTxOs.
+- **The parser receives held UTxOs, but the evaluator receives none.**
+  `TxParser.parse` gets the confirmed set as its second argument. Mesh passes an
+  empty additional UTxO set to the evaluator, so Blockfrost must resolve every
+  input from confirmed chain data. Every builder must therefore pass only
+  confirmed wallet UTxOs to coin selection and collateral selection.
+  `EventFactory.getCollateralUTxOs` sorts pure-ADA UTxOs by value and selects
+  the largest first. A merged set can therefore select a large unconfirmed
+  change output as collateral even while one confirmed output remains.
 - **Throughput is bounded by the count of confirmed pure-ADA wallet UTxOs.**
-  Each mint consumes one and returns change that is unconfirmed for one block.
-  A burst deeper than that count is rejected at the request path with 502, or
-  it waits for the pg-boss retry. Keep the wallet split into many UTxOs.
+  Mint, recreate, spend, and deploy-ref can each consume one. Change remains
+  unconfirmed for one block. A deeper burst waits for a pg-boss retry instead
+  of failing inside the evaluator. Keep the wallet split into many UTxOs.
+  One small confirmed UTxO passes the gate but can still fail coin selection.
+  The exact Mesh insufficient-value error becomes a typed funding deferral and
+  returns to pg-boss instead of writing an early terminal status.
 - **A failure before a transaction reaches the network must return to the
   queue.** Nothing was submitted, so a retry cannot double spend or double
   mint. The queue worker marks the row ERROR only on the final attempt.
   Measured on the preview network, a 40-deep burst settles every enqueued job.
+- **A reference deployment without confirmed funding returns to pg-boss.** The
+  worker retries the stored mint result and must never rebuild that mint.
 - **A row that says ERROR while holding a transaction hash is not trusted.**
   The hash is written before the submit, so such a row can describe a
   transaction that reached the chain. Three layers settle it: the retry

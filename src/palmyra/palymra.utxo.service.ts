@@ -1,10 +1,8 @@
-import { Logger } from '@nestjs/common';
 import { UTxO } from '@meshsdk/core';
 import { BlockFrostAPI, Responses } from '@blockfrost/blockfrost-js';
 import { BLOCKFROST_KEY } from 'src/constants';
 
 export class UtxoService {
-  private readonly logger = new Logger(UtxoService.name);
   private readonly bf: BlockFrostAPI;
 
   constructor() {
@@ -23,17 +21,11 @@ export class UtxoService {
   }
 
   async flushMempool(): Promise<Responses['mempool_tx_content'][]> {
-    try {
-      const transactions: Responses['mempool_content'] =
-        await this.bf.mempoolAll();
-      return Promise.all(
-        transactions.map(async (obj) => await this.bf.mempoolTx(obj.tx_hash)),
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`flushMempool degraded: ${message}`);
-      return [];
-    }
+    const transactions: Responses['mempool_content'] =
+      await this.bf.mempoolAll();
+    return Promise.all(
+      transactions.map(async (obj) => await this.bf.mempoolTx(obj.tx_hash)),
+    );
   }
 
   async getUnconfirmedOutputs(
@@ -77,8 +69,14 @@ export class UtxoService {
       });
   }
 
-  async getAllUtxos(utxos: UTxO[], addresses: string[]): Promise<UTxO[]> {
-    const mempool = await this.flushMempool();
+  // The only funding partition. It never merges the two sets, because a
+  // mempool-only input cannot be resolved by the remote evaluator and the
+  // collateral selector picks the largest pure-ADA UTxO it can see.
+  async getUtxoSets(
+    utxos: UTxO[],
+    addresses: string[],
+    mempool: Responses['mempool_tx_content'][],
+  ): Promise<{ confirmed: UTxO[]; unconfirmed: UTxO[] }> {
     const unconfirmedInputs = await this.getUnconfirmedInputs(mempool);
     const unconfirmedOutputs = await this.getUnconfirmedOutputs(
       addresses,
@@ -92,12 +90,10 @@ export class UtxoService {
           input.txHash === utxo.input.txHash,
       );
 
-    const confirmedUtxos = utxos.filter((utxo) => !isSpent(utxo));
-    const filteredUnconfirmedOutputs = unconfirmedOutputs.filter(
-      (utxo) => !isSpent(utxo),
-    );
+    const confirmed = utxos.filter((utxo) => !isSpent(utxo));
+    const unconfirmed = unconfirmedOutputs.filter((utxo) => !isSpent(utxo));
 
-    return [...confirmedUtxos, ...filteredUnconfirmedOutputs];
+    return { confirmed, unconfirmed };
   }
 
   getTotalLovelace(utxos: UTxO[]): bigint {
