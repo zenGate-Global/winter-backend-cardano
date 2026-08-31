@@ -183,6 +183,18 @@ export class PalmyraConsumerService {
     if (/insufficient collateral/i.test(msg)) return true;
     return this.isAmbiguousSubmitError(error);
   }
+  private logOperationFailure(operation: string, error: unknown): void {
+    if (
+      error instanceof NoConfirmedFundingUtxoError ||
+      error instanceof InsufficientConfirmedFundingError
+    ) {
+      this.logger.warn(
+        `Deferred ${operation}: ${this.storedErrorMessage(error)}`,
+      );
+      return;
+    }
+    this.logger.error(`Error ${operation}: ${error}`);
+  }
 
   private shouldRetryTransaction(hash: unknown): boolean {
     if (typeof hash !== 'string') {
@@ -584,7 +596,7 @@ export class PalmyraConsumerService {
         status: CheckStatus.ERROR,
         error: reason,
       });
-      this.logger.warn(`Retries exhausted for ${id}: ${reason}`);
+      this.logger.error(`Retries exhausted for ${id}: ${reason}`);
       return;
     }
 
@@ -817,7 +829,7 @@ export class PalmyraConsumerService {
         this.logger.error(`bookkeeping create failed for ${txid}: ${dbError}`);
       }
     } catch (error) {
-      this.logger.error(`Error minting: ${error}`);
+      this.logOperationFailure('minting', error);
       await this.recordFailure(data.id, 'minting', error);
     }
   }
@@ -883,7 +895,7 @@ export class PalmyraConsumerService {
         this.logger.error(`recreate bookkeeping failed: ${dbError}`);
       }
     } catch (error) {
-      this.logger.error(`Error recreating: ${error}`);
+      this.logOperationFailure('recreating', error);
       await this.recordFailure(data.id, 'recreating', error);
     }
   }
@@ -940,7 +952,7 @@ export class PalmyraConsumerService {
         this.logger.error(`spend bookkeeping failed: ${dbError}`);
       }
     } catch (error) {
-      this.logger.error(`Error spending: ${error}`);
+      this.logOperationFailure('spending', error);
       await this.recordFailure(data.id, 'spending', error);
     }
   }
