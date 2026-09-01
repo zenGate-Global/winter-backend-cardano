@@ -21,7 +21,7 @@ export class TransactionsService {
   async findAll(limit = 50, offset = 0) {
     const take = Math.min(Math.max(limit, 1), 200);
     const skip = Math.max(offset, 0);
-    return this.txRepository.find({ take, skip });
+    return this.txRepository.find({ take, skip, order: { txid: 'ASC' } });
   }
 
   async findOne(txid: string) {

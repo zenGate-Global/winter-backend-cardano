@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsByteLength, IsString } from 'class-validator';
+import { IsByteLength, IsString, Matches } from 'class-validator';
 import { SpendCommodityResponseDto } from './spend-commodity.dto';
 
 export class TokenizeCommodityDto {
@@ -17,6 +17,7 @@ export class TokenizeCommodityDto {
       'ipfs://bafkreihfxojbr7gvaukph2jaxeoc4n25lut4s6tepfnnouwlxwc74uyhaa',
   })
   @IsString()
+  @Matches(/^\S(?:.*\S)?$/)
   metadataReference: string;
 }
 

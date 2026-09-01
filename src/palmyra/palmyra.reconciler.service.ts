@@ -110,10 +110,8 @@ export class PalmyraReconcilerService implements OnModuleInit, OnModuleDestroy {
           `reconciler examined ${examined} row(s), confirmed ${promoted}`,
         );
       }
-    } catch (error) {
-      this.logger.error(
-        `reconciler sweep failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    } catch {
+      this.logger.error('reconciler sweep failed');
     } finally {
       this.running = false;
     }

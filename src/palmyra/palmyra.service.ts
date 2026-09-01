@@ -74,22 +74,11 @@ export class PalmyraService {
           throw new Error(`UTxO with datum not found for asset ${id}`);
         }),
       );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Blockfrost commodityDetails error: ${message}`);
-      throw new BadGatewayException('Blockfrost API Error', {
-        cause: error,
-      });
+    } catch (_error) {
+      this.logger.error('Blockfrost commodityDetails request failed');
+      throw new BadGatewayException('Blockfrost API Error');
     }
-    try {
-      return datums;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`datum decode error: ${message}`);
-      throw new InternalServerErrorException('Datum Decode Error', {
-        cause: error,
-      });
-    }
+    return datums;
   }
 
   private async findExistingCheck(id: string): Promise<Check | null> {
@@ -114,44 +103,83 @@ export class PalmyraService {
     }
   }
 
-  // A repeat of a request that carried the same `Idempotency-Key` resolves to
-  // the same job identifier. A PENDING row can have no pg-boss job if the
-  // process stopped after the row insert, so send its deterministic job again.
+  // A repeat of a request that carried the same key resolves to the same job.
+  // A PENDING spend or recreate row needs script references before enqueue.
+  private async enrichReplayData(
+    data: spendCommodityJob | recreateCommodityJob,
+  ): Promise<void> {
+    data.utxoRef = await this.enrichUtxoRef(data.utxos, data.utxoRef);
+  }
+
+  private async enrichUtxoRef(
+    utxos: spendCommodityJob['utxos'],
+    existing: recreateCommodityJob['utxoRef'] = {},
+  ): Promise<recreateCommodityJob['utxoRef']> {
+    const fetched = await Promise.all(
+      utxos.map((utxo) =>
+        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
+      ),
+    );
+    const utxoRef: recreateCommodityJob['utxoRef'] = { ...existing };
+    for (const result of fetched) {
+      const address = result?.[0]?.output.address;
+      if (!address) throw new Error('Requested UTxO was not found');
+      if (address in utxoRef) continue;
+      const deployment =
+        await this.deploymentService.getLiveDeploymentByContractAddress(
+          address,
+        );
+      utxoRef[address] = {
+        singletonScript: undefined,
+        objectEventScript: {
+          txHash: deployment.deploymentTxHash,
+          outputIndex: deployment.deploymentOutputIndex,
+        },
+      };
+    }
+    return utxoRef;
+  }
+
+  private async enqueueReplay<K extends TxQueueJobKind>(
+    kind: K,
+    data: TxQueueJobData<K>,
+  ): Promise<void> {
+    if (kind !== 'tokenize-commodity') {
+      try {
+        await this.enrichReplayData(
+          data as spendCommodityJob | recreateCommodityJob,
+        );
+      } catch {
+        this.logger.warn('Replay enrichment deferred');
+      }
+    }
+    const refreshed = await this.findExistingCheck(data.id);
+    if (refreshed?.status === CheckStatus.PENDING) {
+      await this.queue.enqueue(kind, data);
+    }
+  }
+
   private async alreadyAccepted<K extends TxQueueJobKind>(
     kind: K,
     data: TxQueueJobData<K>,
     incomingFingerprint: string | null,
   ): Promise<boolean> {
     const check = await this.findExistingCheck(data.id);
-    if (!check) {
-      return false;
-    }
+    if (!check) return false;
     this.assertMatchingFingerprint(check, incomingFingerprint);
     if (check.status === CheckStatus.PENDING) {
-      await this.queue.enqueue(kind, data);
+      await this.enqueueReplay(kind, data);
     }
     this.logger.log(
       `idempotent replay for ${data.id}, returning the existing job`,
     );
     return true;
   }
-
   async dispatchSpendCommodity(
     jobArguments: spendCommodityJob,
     requestFingerprint: string | null,
   ) {
     try {
-      const existing = await this.findExistingCheck(jobArguments.id);
-      if (existing) {
-        this.assertMatchingFingerprint(existing, requestFingerprint);
-        if (existing.status !== CheckStatus.PENDING) {
-          this.logger.log(
-            `idempotent replay for ${jobArguments.id}, returning the existing job`,
-          );
-          return;
-        }
-      }
-
       // Enrichment belongs in the serialized worker; keep request thread free
       // of provider lookups and deterministic builds.
       if (
@@ -173,12 +201,8 @@ export class PalmyraService {
       if (error instanceof ConflictException) {
         throw error;
       }
-      this.logger.error(
-        `Spend Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new BadGatewayException('Spend Tx Failed', {
-        cause: error,
-      });
+      this.logger.error('Spend Tx Failed');
+      throw new BadGatewayException('Spend Tx Failed');
     }
   }
 
@@ -210,12 +234,8 @@ export class PalmyraService {
       if (error instanceof ConflictException) {
         throw error;
       }
-      this.logger.error(
-        `Mint Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new BadGatewayException('Mint Tx Failed', {
-        cause: error,
-      });
+      this.logger.error('Mint Tx Failed');
+      throw new BadGatewayException('Mint Tx Failed');
     }
   }
 
@@ -224,17 +244,6 @@ export class PalmyraService {
     requestFingerprint: string | null,
   ) {
     try {
-      const existing = await this.findExistingCheck(jobArguments.id);
-      if (existing) {
-        this.assertMatchingFingerprint(existing, requestFingerprint);
-        if (existing.status !== CheckStatus.PENDING) {
-          this.logger.log(
-            `idempotent replay for ${jobArguments.id}, returning the existing job`,
-          );
-          return;
-        }
-      }
-
       if (
         await this.alreadyAccepted(
           'recreate-commodity',
@@ -259,12 +268,8 @@ export class PalmyraService {
       if (error instanceof ConflictException) {
         throw error;
       }
-      this.logger.error(
-        `Recreate Tx Failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new BadGatewayException('Recreate Tx Failed', {
-        cause: error,
-      });
+      this.logger.error('Recreate Tx Failed');
+      throw new BadGatewayException('Recreate Tx Failed');
     }
   }
 
@@ -283,34 +288,26 @@ export class PalmyraService {
         let existing: Check | null;
         try {
           existing = await this.findExistingCheck(data.id);
-        } catch (lookupError) {
-          throw new InternalServerErrorException('Check lookup failed', {
-            cause: lookupError,
-          });
+        } catch {
+          throw new InternalServerErrorException('Check lookup failed');
         }
         if (!existing) {
-          throw new InternalServerErrorException('Check lookup failed', {
-            cause: error,
-          });
+          throw new InternalServerErrorException('Check lookup failed');
         }
         this.assertMatchingFingerprint(
           existing,
           check.requestFingerprint ?? null,
         );
         if (existing.status === CheckStatus.PENDING) {
-          await this.queue.enqueue(kind, data);
+          await this.enqueueReplay(kind, data);
         }
         this.logger.log(
           `idempotent replay for ${data.id} lost the insert race, returning the existing job`,
         );
         return;
       }
-      this.logger.error(
-        `check create failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new InternalServerErrorException('Check persistence failed', {
-        cause: error,
-      });
+      this.logger.error('check create failed');
+      throw new InternalServerErrorException('Check persistence failed');
     }
 
     try {
@@ -319,15 +316,11 @@ export class PalmyraService {
       try {
         await this.checkDb.update(data.id, {
           status: CheckStatus.ERROR,
-          error: `queue error: ${error instanceof Error ? error.message : String(error)}`,
+          error: 'queue dispatch failed',
         });
-      } catch (updateError) {
-        this.logger.error(
-          `check update after queue failure failed: ${updateError instanceof Error ? updateError.message : String(updateError)}`,
-        );
-        throw new InternalServerErrorException('Check persistence failed', {
-          cause: updateError,
-        });
+      } catch {
+        this.logger.error('check update after queue failure failed');
+        throw new InternalServerErrorException('Check persistence failed');
       }
       throw error;
     }

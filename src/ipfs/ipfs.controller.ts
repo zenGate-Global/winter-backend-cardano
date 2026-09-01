@@ -1,10 +1,12 @@
 import {
-  Controller,
-  Post,
+  BadRequestException,
   Body,
+  Controller,
   HttpException,
   HttpStatus,
   Logger,
+  Post,
+  Req,
 } from '@nestjs/common';
 import { IpfsService } from './ipfs.service';
 import { StoreIpfsResponseDto } from './dto/store-ipfs.dto';
@@ -15,6 +17,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ErrorResponse } from '../palmyra/dto/error.dto';
+import { IPFS_CANONICAL_BODY } from './lossless-json';
+import type { Request } from 'express';
 
 @ApiTags('IPFS')
 @Controller('ipfs')
@@ -34,20 +38,25 @@ export class IpfsController {
   async store(
     @Body()
     data: IpfsEnvelopeDto,
+    @Req() req: Request,
   ): Promise<StoreIpfsResponseDto> {
     try {
-      const res = await this.ipfsService.storeJson(data);
+      const canonical = (req as unknown as Record<symbol, Buffer>)[
+        IPFS_CANONICAL_BODY
+      ];
+      const cid = canonical
+        ? await this.ipfsService.storeCanonical(canonical)
+        : await this.ipfsService.storeJson(data);
       return {
-        hash: res as string,
+        hash: cid as string,
       };
     } catch (error) {
-      this.logger.error(`CID validation failed: ${error}`);
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('IPFS upload failed');
       throw new HttpException(
-        `IPFS Upload Failed`,
+        'IPFS Upload Failed',
         HttpStatus.INTERNAL_SERVER_ERROR,
-        {
-          cause: error.message,
-        },
+        { cause: error },
       );
     }
   }

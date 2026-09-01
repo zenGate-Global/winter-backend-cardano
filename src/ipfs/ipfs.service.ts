@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PinataSDK } from 'pinata';
+import { canonicalJson } from './lossless-json';
 
 @Injectable()
 export class IpfsService {
@@ -16,16 +17,32 @@ export class IpfsService {
     });
   }
 
-  async storeJson(json: any): Promise<string> {
+  async storeJson(json: unknown): Promise<string> {
     try {
-      const upload = await this.pinata.upload.public.json(json);
+      const bytes = canonicalJson(json);
+      const upload = await this.pinata.upload.public.file(
+        new File([bytes], 'data.json', { type: 'application/json' }),
+      );
       return upload.cid;
     } catch (error) {
-      this.logger.error(`ipfs upload error: ${error}`);
-      throw new BadRequestException({
-        message: 'IPFS Upload Error',
-        cause: error.message,
-      });
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('IPFS upload failed');
+      throw new BadRequestException('IPFS Upload Error');
+    }
+  }
+
+  async storeCanonical(canonical: Buffer): Promise<string> {
+    try {
+      const upload = await this.pinata.upload.public.file(
+        new File([canonical as unknown as BlobPart], 'data.json', {
+          type: 'application/json',
+        }),
+      );
+      return upload.cid;
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('IPFS upload failed');
+      throw new BadRequestException('IPFS Upload Error');
     }
   }
 }

@@ -66,6 +66,7 @@ function makeUtxo(
   lovelace: string,
   address = WALLET_ADDRESS,
   scriptRef?: string,
+  scriptHash?: string,
 ): UTxO {
   return {
     input: { txHash, outputIndex },
@@ -73,7 +74,7 @@ function makeUtxo(
       address,
       amount: [{ unit: 'lovelace', quantity: lovelace }],
       scriptRef,
-      scriptHash: undefined,
+      scriptHash,
     },
   } as UTxO;
 }
@@ -345,7 +346,7 @@ async function checkConsumerDeferral(): Promise<void> {
       }),
     ),
   ];
-  for (const providerError of providerErrors) {
+  for (const [index, providerError] of providerErrors.entries()) {
     updates.length = 0;
     assert.equal(consumer.isTransientBuildError(providerError), true);
     await assert.rejects(
@@ -355,12 +356,14 @@ async function checkConsumerDeferral(): Promise<void> {
     assert.deepEqual(updates, [
       {
         id: 'mint-job',
-        error: 'minting error: provider request failed',
+        error:
+          index === providerErrors.length - 1
+            ? 'minting error: operation failed'
+            : 'minting error: provider request failed',
       },
     ]);
     assert.equal(Object.hasOwn(updates[0], 'status'), false);
   }
-
   updates.length = 0;
   await consumer.markRetriesExhausted('mint-job', providerErrors[0]);
   assert.deepEqual(updates, [
@@ -472,7 +475,9 @@ async function checkConsumerOperationLogging(): Promise<void> {
       ]);
     }
 
-    const fatal = new Error('ordinary fatal failure');
+    const fatal = new Error(
+      'provider x-api-key=secret Authorization=Bearer-secret cbor=84deadbeef',
+    );
     const warnings: string[] = [];
     const errors: string[] = [];
     const updates: { status?: CheckStatus; error?: string }[] = [];
@@ -502,37 +507,83 @@ async function checkConsumerOperationLogging(): Promise<void> {
     await operation.run(consumer);
     assert.deepEqual(warnings, []);
     assert.deepEqual(errors, [
-      `Error ${operation.name}: Error: ordinary fatal failure`,
+      `Error ${operation.name}: Error: operation failed`,
     ]);
     assert.deepEqual(updates, [
       {
         status: CheckStatus.ERROR,
-        error: `${operation.name} error: ordinary fatal failure`,
+        error: `${operation.name} error: operation failed`,
       },
     ]);
+    assert.equal(JSON.stringify({ errors, updates }).includes('secret'), false);
+    assert.equal(
+      JSON.stringify({ errors, updates }).includes('84deadbeef'),
+      false,
+    );
+  }
+}
+async function checkTerminalFailureStickiness(): Promise<void> {
+  for (const status of [
+    CheckStatus.SUBMITTED,
+    CheckStatus.SUCCESS,
+    CheckStatus.CONFIRMED,
+  ]) {
+    const updates: unknown[] = [];
+    const consumer = Object.create(PalmyraConsumerService.prototype) as any;
+    consumer.logger = {
+      warn: () => undefined,
+      log: () => undefined,
+      error: () => undefined,
+    };
+    consumer.checkDb = {
+      findOne: async () => ({
+        status,
+        txid: '5'.repeat(64),
+        signedTx: 'stored-cbor',
+      }),
+      update: async (_id: string, patch: unknown) => updates.push(patch),
+    };
+    const transient = new NoConfirmedFundingUtxoError(0, 1);
+    await assert.rejects(
+      consumer.recordFailure('mint-job', 'minting', transient),
+      (error: unknown) => error === transient,
+    );
+    const fatal = new Error('x-api-key=secret cbor=84deadbeef');
+    await assert.rejects(
+      consumer.recordFailure('mint-job', 'minting', fatal),
+      (error: unknown) => error === fatal,
+    );
+    assert.deepEqual(updates, [], `${status} must remain unchanged`);
   }
 }
 async function checkPostSubmitDeploymentDeferral(): Promise<void> {
-  for (const shortage of [
+  const failures = [
     new NoConfirmedFundingUtxoError(0, 1),
     new InsufficientConfirmedFundingError(
       new Error('Not enough UTxOs to cover the required value.'),
     ),
-  ]) {
-    for (const status of [CheckStatus.SUBMITTED, CheckStatus.QUEUED]) {
+    new Error('raw deployment provider unavailable'),
+    new Error('deployment persistence failed'),
+  ];
+  for (const failure of failures) {
+    for (const initialStatus of [CheckStatus.SUBMITTED, CheckStatus.QUEUED]) {
       const txid = '5'.repeat(64);
       const signedTx = 'stored-signed-cbor';
+      const row: {
+        status: CheckStatus;
+        txid: string;
+        signedTx: string;
+        error?: string;
+      } = { status: initialStatus, txid, signedTx };
       let deploymentCalls = 0;
       let submitCalls = 0;
-      const warnings: string[] = [];
-      const errors: string[] = [];
-      let failureCalls = 0;
       let transactionWrites = 0;
+      const updates: unknown[] = [];
       const consumer = Object.create(PalmyraConsumerService.prototype) as any;
       consumer.logger = {
-        warn: (message: string) => warnings.push(message),
+        warn: () => undefined,
         log: () => undefined,
-        error: (message: string) => errors.push(message),
+        error: () => undefined,
       };
       consumer.handleExistingTx = async () => ({
         kind: 'existing',
@@ -542,17 +593,21 @@ async function checkPostSubmitDeploymentDeferral(): Promise<void> {
         deployment: undefined,
       });
       consumer.checkDb = {
-        findOne: async () => ({ status, txid, signedTx }),
+        findOne: async () => row,
+        update: async (_id: string, patch: Partial<typeof row>) => {
+          updates.push(patch);
+          Object.assign(row, patch);
+        },
       };
       consumer.ensureDeployment = async (
         _data: tokenizeCommodityJob,
         actualTxid: string,
         actualSignedTx: string,
       ) => {
-        deploymentCalls++;
+        deploymentCalls += 1;
         assert.equal(actualTxid, txid);
         assert.equal(actualSignedTx, signedTx);
-        throw shortage;
+        throw failure;
       };
       consumer.submitWithHashCheck = async (
         _id: string,
@@ -560,35 +615,26 @@ async function checkPostSubmitDeploymentDeferral(): Promise<void> {
         actualTxid: string,
         storedSignedTx: string,
       ) => {
-        submitCalls++;
+        submitCalls += 1;
         assert.equal(actualSignedTx, signedTx);
         assert.equal(actualTxid, txid);
         assert.equal(storedSignedTx, signedTx);
-      };
-      consumer.recordFailure = async (
-        _id: string,
-        _operation: string,
-        error: unknown,
-      ) => {
-        failureCalls++;
-        assert.equal(error, shortage);
-        throw error;
+        row.status = CheckStatus.SUBMITTED;
       };
       consumer.db = {
         create: async () => {
-          transactionWrites++;
+          transactionWrites += 1;
         },
       };
 
       await assert.rejects(
         consumer.tokenizeCommodity(tokenizeJob),
-        (error: unknown) => error === shortage,
+        (error: unknown) => error === failure,
       );
-      assert.deepEqual(errors, []);
-      assert.deepEqual(warnings, [`Deferred minting: ${shortage.message}`]);
+      assert.equal(row.status, CheckStatus.SUBMITTED);
       assert.equal(deploymentCalls, 1);
-      assert.equal(submitCalls, status === CheckStatus.QUEUED ? 1 : 0);
-      assert.equal(failureCalls, 1);
+      assert.equal(submitCalls, initialStatus === CheckStatus.QUEUED ? 1 : 0);
+      assert.deepEqual(updates, []);
       assert.equal(transactionWrites, 0);
     }
   }
@@ -606,6 +652,7 @@ async function checkMempoolFailure(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const utxoModule = require('../src/palmyra/palymra.utxo.service') as {
     UtxoService: typeof UtxoService;
   };
@@ -795,8 +842,30 @@ async function main(): Promise<void> {
     assert.equal(probe.funding, undefined);
     assert.deepEqual(probe.collateralSources, []);
 
+    const scriptHashOnly = makeUtxo(
+      'h'.repeat(64),
+      0,
+      '6000000',
+      WALLET_ADDRESS,
+      undefined,
+      'reference-script-hash',
+    );
+    const ordinary = makeUtxo('o'.repeat(64), 0, '6000000');
+    const mixed = [referenceScript, scriptHashOnly, ordinary];
+    for (const kind of ['mint', 'recreate', 'spend', 'deploy-ref'] as const) {
+      setUtxoSets({ confirmed: mixed, unconfirmed: [] });
+      const mixedProbe = makeFactory(mixed);
+      await assert.rejects(
+        runBuilder(kind, mixedProbe.factory),
+        (error) => error === BUILD_REACHED,
+      );
+      assert.deepEqual(mixedProbe.funding, [ordinary]);
+      assert.deepEqual(mixedProbe.collateralSources, [[ordinary]]);
+    }
+
     await checkConsumerDeferral();
     await checkConsumerOperationLogging();
+    await checkTerminalFailureStickiness();
     await checkPostSubmitDeploymentDeferral();
   } finally {
     UtxoService.prototype.getUtxoSets = originalGetUtxoSets;

@@ -9,7 +9,6 @@ import {
   BlockfrostProvider,
   resolveScriptHash,
   resolveTxHash,
-  TxParser,
   UTxO,
 } from '@meshsdk/core';
 import {
@@ -32,7 +31,7 @@ import {
   TRANSACTION_RETRY_ATTEMPTS,
 } from 'src/constants';
 import { TxQueueJob } from './palmyra-queue.types.js';
-import { CSLSerializer } from '@meshsdk/core-csl';
+import { getTransactionInputs, getTransactionOutputs } from '@meshsdk/core-csl';
 import { NoConfirmedFundingUtxoError } from './no-confirmed-funding-utxo.error';
 import { InsufficientConfirmedFundingError } from './insufficient-confirmed-funding.error';
 
@@ -107,6 +106,12 @@ export class PalmyraConsumerService {
   }
 
   private storedErrorMessage(error: unknown): string {
+    if (
+      error instanceof NoConfirmedFundingUtxoError ||
+      error instanceof InsufficientConfirmedFundingError
+    ) {
+      return error.message;
+    }
     if (error && typeof error === 'object') {
       const providerError = error as {
         name?: unknown;
@@ -131,11 +136,7 @@ export class PalmyraConsumerService {
         return 'provider request failed';
       }
     }
-    const message = error instanceof Error ? error.message : String(error);
-    if (/"status(?:_code)?"\s*:\s*\d{3}/.test(message)) {
-      return 'provider request failed';
-    }
-    return message;
+    return 'operation failed';
   }
 
   private isTransientBuildError(error: unknown): boolean {
@@ -184,16 +185,19 @@ export class PalmyraConsumerService {
     return this.isAmbiguousSubmitError(error);
   }
   private logOperationFailure(operation: string, error: unknown): void {
+    const safe = this.storedErrorMessage(error);
     if (
       error instanceof NoConfirmedFundingUtxoError ||
       error instanceof InsufficientConfirmedFundingError
     ) {
-      this.logger.warn(
-        `Deferred ${operation}: ${this.storedErrorMessage(error)}`,
-      );
+      this.logger.warn(`Deferred ${operation}: ${safe}`);
       return;
     }
-    this.logger.error(`Error ${operation}: ${error}`);
+    const diagnostic =
+      error instanceof Error && safe !== 'provider request failed'
+        ? `Error: ${safe}`
+        : safe;
+    this.logger.error(`Error ${operation}: ${diagnostic}`);
   }
 
   private shouldRetryTransaction(hash: unknown): boolean {
@@ -229,12 +233,10 @@ export class PalmyraConsumerService {
         const hash = this.extractHash(result);
         if (hash !== undefined && this.shouldRetryTransaction(hash)) {
           this.logger.warn(
-            `Attempt ${attempt}/${maxAttempts}: Invalid hash received: ${hash}. Retrying...`,
+            `Attempt ${attempt}/${maxAttempts}: Invalid transaction result. Retrying...`,
           );
           if (attempt === maxAttempts) {
-            throw new Error(
-              `Transaction failed after ${maxAttempts} attempts. Last result: ${hash}`,
-            );
+            throw new Error('Transaction returned an invalid hash');
           }
           continue;
         }
@@ -255,9 +257,10 @@ export class PalmyraConsumerService {
           this.logger.warn(error.message);
           throw error;
         }
-        lastError = error instanceof Error ? error : new Error(String(error));
+        lastError =
+          error instanceof Error ? error : new Error('operation failed');
         this.logger.warn(
-          `Attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`,
+          `Attempt ${attempt}/${maxAttempts} failed: ${this.storedErrorMessage(error)}`,
         );
         if (attempt === maxAttempts) {
           throw lastError;
@@ -303,9 +306,7 @@ export class PalmyraConsumerService {
       });
     } catch (error) {
       this.logger.error(
-        `failed to update status to queue in check db: ${JSON.stringify(
-          error,
-        )}`,
+        `failed to update status to queue in check db: ${this.storedErrorMessage(error)}`,
       );
     }
   }
@@ -375,40 +376,32 @@ export class PalmyraConsumerService {
 
   private async enrichUtxoRef(
     utxos: UtxoQuery[],
-  ): Promise<
-    Record<
-      string,
-      { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
-    >
-  > {
-    if (!utxos.length) return {};
+    existing: recreateCommodityJob['utxoRef'] = {},
+  ): Promise<recreateCommodityJob['utxoRef']> {
+    if (!utxos.length) return { ...existing };
     const fetched = await Promise.all(
-      utxos.map((u) => this.provider.fetchUTxOs(u.txHash, u.outputIndex)),
+      utxos.map((utxo) =>
+        this.provider.fetchUTxOs(utxo.txHash, utxo.outputIndex),
+      ),
     );
-    const contractAddresses = fetched.map(
-      (arr) => arr?.[0]?.output.address ?? '',
-    );
-    const utxoRef: Record<
-      string,
-      { singletonScript: UtxoQuery | undefined; objectEventScript: UtxoQuery }
-    > = {};
-    for (const cA of contractAddresses) {
-      if (!cA) continue;
-      try {
-        const deployment =
-          await this.deploymentService.getDeploymentByContractAddress(cA);
-        utxoRef[cA] = {
-          singletonScript: undefined,
-          objectEventScript: {
-            txHash: deployment.deploymentTxHash,
-            outputIndex: deployment.deploymentOutputIndex,
-          },
-        };
-      } catch (error) {
-        this.logger.warn(
-          `Deployment not found for contract address ${cA}: ${error}`,
+    const addresses = fetched.map((result) => {
+      const address = result?.[0]?.output.address;
+      if (!address) throw new Error('Requested UTxO was not found');
+      return address;
+    });
+    const utxoRef: recreateCommodityJob['utxoRef'] = { ...existing };
+    for (const address of new Set(addresses)) {
+      const deployment =
+        await this.deploymentService.getLiveDeploymentByContractAddress(
+          address,
         );
-      }
+      utxoRef[address] = {
+        singletonScript: undefined,
+        objectEventScript: {
+          txHash: deployment.deploymentTxHash,
+          outputIndex: deployment.deploymentOutputIndex,
+        },
+      };
     }
     return utxoRef;
   }
@@ -468,6 +461,13 @@ export class PalmyraConsumerService {
   ): Promise<void> {
     const message = `${operation} error: ${this.storedErrorMessage(error)}`;
     const check = await this.checkDb.findOne(id);
+    if (
+      check.status === CheckStatus.SUBMITTED ||
+      check.status === CheckStatus.SUCCESS ||
+      check.status === CheckStatus.CONFIRMED
+    ) {
+      throw error;
+    }
     if (!check.txid) {
       if (this.isTransientBuildError(error)) {
         await this.checkDb.update(id, { error: message });
@@ -549,7 +549,7 @@ export class PalmyraConsumerService {
             error: reason,
           });
           this.logger.warn(
-            `Retries exhausted for ${id} with unresolved txid ${check.txid}: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`,
+            `Retries exhausted for ${id} with unresolved txid ${check.txid}: ${this.storedErrorMessage(fetchError)}`,
           );
           return;
         }
@@ -607,7 +607,10 @@ export class PalmyraConsumerService {
     this.logger.error(`Retries exhausted for ${id}: ${message}`);
   }
 
-  private async saveDeployment(deployment: StoredDeployment): Promise<void> {
+  private async saveDeployment(
+    deployment: StoredDeployment,
+    scriptHash: string = this.objectEventScriptHash,
+  ): Promise<void> {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         await this.deploymentService.saveDeployment({
@@ -615,7 +618,7 @@ export class PalmyraConsumerService {
           deploymentTxHash: deployment.txid,
           deploymentOutputIndex: deployment.outputIndex,
           deployAddress: deployment.deployAddress,
-          scriptHash: this.objectEventScriptHash,
+          scriptHash,
         });
         return;
       } catch (error) {
@@ -625,51 +628,22 @@ export class PalmyraConsumerService {
     }
   }
 
-  private async findOnChainDeployment(): Promise<{
-    txHash: string;
-    outputIndex: number;
-  } | null> {
-    const utxos = await this.provider.fetchAddressUTxOs(this.deployerAddress);
-    const match = utxos.find(
-      (utxo) => utxo.output.scriptHash === this.objectEventScriptHash,
-    );
-    return match
-      ? {
-          txHash: match.input.txHash,
-          outputIndex: match.input.outputIndex,
-        }
-      : null;
-  }
-
-  private async getMintContext(
-    signedTx: string,
-    providedUtxos?: UTxO[],
-  ): Promise<{
+  private async getMintContext(signedTx: string): Promise<{
     contractAddress: string;
     utxoRef: { txHash: string; outputIndex: number };
   }> {
-    const parser = new TxParser(
-      new CSLSerializer(),
-      this.factory.fetcher as unknown as ConstructorParameters<
-        typeof TxParser
-      >[1],
+    const output = getTransactionOutputs(signedTx).find((candidate) =>
+      candidate.output.amount.some((asset) => asset.unit !== 'lovelace'),
     );
-    const body = await parser.parse(signedTx, providedUtxos);
-    const output = body.outputs.find((candidate) =>
-      candidate.amount.some((asset) => asset.unit !== 'lovelace'),
-    );
-    const input = body.inputs[0]?.txIn;
+    const input = getTransactionInputs(signedTx)[0];
     if (!output || !input) {
       throw new Error(
         'Stored mint transaction is missing its mint output or input',
       );
     }
     return {
-      contractAddress: output.address,
-      utxoRef: {
-        txHash: input.txHash,
-        outputIndex: input.txIndex,
-      },
+      contractAddress: output.output.address,
+      utxoRef: { txHash: input.txHash, outputIndex: input.outputIndex },
     };
   }
 
@@ -678,26 +652,65 @@ export class PalmyraConsumerService {
     mintTxid: string,
     signedTx: string,
     storedDeployment?: StoredDeployment,
-    inputUtxos?: UTxO[],
   ): Promise<void> {
-    const context = await this.getMintContext(signedTx, inputUtxos);
-    if (
-      await this.deploymentService.deploymentExistsByContractAddress(
+    if (resolveTxHash(signedTx).toLowerCase() !== mintTxid.toLowerCase()) {
+      throw new Error(
+        'Stored mint transaction hash does not match its identity',
+      );
+    }
+    const context = await this.getMintContext(signedTx);
+    const isCurrentValidator =
+      context.contractAddress === this.factory.objectEventContractAddress;
+    const scriptHash = this.objectEventScriptHash;
+
+    if (storedDeployment) {
+      if (
+        typeof storedDeployment.signedTx !== 'string' ||
+        typeof storedDeployment.txid !== 'string' ||
+        storedDeployment.contractAddress !== context.contractAddress ||
+        storedDeployment.deployAddress !== this.deployerAddress ||
+        storedDeployment.outputIndex !== 0 ||
+        !Number.isSafeInteger(storedDeployment.outputIndex) ||
+        resolveTxHash(storedDeployment.signedTx).toLowerCase() !==
+          storedDeployment.txid.toLowerCase()
+      ) {
+        throw new Error(
+          'Stored deployment identity is malformed or mismatched',
+        );
+      }
+    }
+
+    if (!isCurrentValidator) {
+      await this.deploymentService.getLiveDeploymentByContractAddress(
         context.contractAddress,
-      )
-    ) {
+      );
       return;
     }
 
-    const onChain = await this.findOnChainDeployment();
-    if (onChain) {
-      await this.saveDeployment({
-        signedTx: storedDeployment?.signedTx ?? '',
-        txid: onChain.txHash,
-        outputIndex: onChain.outputIndex,
-        contractAddress: context.contractAddress,
-        deployAddress: this.deployerAddress,
-      });
+    const referenceState =
+      await this.deploymentService.getCurrentReferenceState(
+        context.contractAddress,
+      );
+    if (referenceState === 'live') return;
+    if (referenceState === 'pending') {
+      throw new Error('Reference deployment is pending confirmation');
+    }
+
+    const live = await this.deploymentService.findLiveReference(
+      context.contractAddress,
+      this.deployerAddress,
+    );
+    if (live) {
+      await this.saveDeployment(
+        {
+          signedTx: storedDeployment?.signedTx ?? '',
+          txid: live.txHash,
+          outputIndex: live.outputIndex,
+          contractAddress: context.contractAddress,
+          deployAddress: this.deployerAddress,
+        },
+        scriptHash,
+      );
       return;
     }
 
@@ -751,7 +764,7 @@ export class PalmyraConsumerService {
       let signedTx: string;
       let storedSignedTx: string | undefined;
       let storedDeployment: StoredDeployment | undefined;
-      let mintInputUtxos: UTxO[] | undefined;
+
       if (existing.kind === 'existing') {
         ({
           txid,
@@ -765,22 +778,7 @@ export class PalmyraConsumerService {
           check.status === CheckStatus.CONFIRMED ||
           check.status === CheckStatus.SUCCESS
         ) {
-          try {
-            await this.ensureDeployment(
-              data,
-              txid,
-              signedTx,
-              storedDeployment,
-              mintInputUtxos,
-            );
-          } catch (deployError) {
-            if (this.isTransientBuildError(deployError)) {
-              throw deployError;
-            }
-            this.logger.error(
-              `deployment bookkeeping failed after mint ${txid}: ${deployError}`,
-            );
-          }
+          await this.ensureDeployment(data, txid, signedTx, storedDeployment);
           return;
         }
         await this.submitWithHashCheck(data.id, signedTx, txid, storedSignedTx);
@@ -798,7 +796,7 @@ export class PalmyraConsumerService {
         if (!result) throw new Error('buildMint returned empty');
         txid = result.mintTxHash;
         signedTx = result.signedTx;
-        mintInputUtxos = result.inputUtxos;
+
         await this.checkDb.update(data.id, { txid, signedTx });
         await this.submitWithHashCheck(data.id, signedTx, txid);
         this.logger.log(
@@ -807,26 +805,13 @@ export class PalmyraConsumerService {
       }
 
       // SUBMITTED already written before bookkeeping
-      try {
-        await this.ensureDeployment(
-          data,
-          txid,
-          signedTx,
-          storedDeployment,
-          mintInputUtxos,
-        );
-      } catch (deployError) {
-        if (this.isTransientBuildError(deployError)) {
-          throw deployError;
-        }
-        this.logger.error(
-          `deployment bookkeeping failed after mint ${txid}: ${deployError}`,
-        );
-      }
+      await this.ensureDeployment(data, txid, signedTx, storedDeployment);
       try {
         await this.db.create({ txid });
       } catch (dbError) {
-        this.logger.error(`bookkeeping create failed for ${txid}: ${dbError}`);
+        this.logger.error(
+          `bookkeeping create failed for ${txid}: ${this.storedErrorMessage(dbError)}`,
+        );
       }
     } catch (error) {
       this.logOperationFailure('minting', error);
@@ -862,9 +847,7 @@ export class PalmyraConsumerService {
         const utxos = await this.factory.getUtxosByOutRef(data.utxos);
         orderedOutRefs = utxos.map((utxo) => utxo.input);
       } else {
-        if (!data.utxoRef || Object.keys(data.utxoRef).length === 0) {
-          data.utxoRef = await this.enrichUtxoRef(data.utxos);
-        }
+        data.utxoRef = await this.enrichUtxoRef(data.utxos, data.utxoRef);
         const result = (await this.retryBuildTransaction(() =>
           buildRecreate(this.factory, { data }, true),
         )) as
@@ -892,7 +875,9 @@ export class PalmyraConsumerService {
           });
         }
       } catch (dbError) {
-        this.logger.error(`recreate bookkeeping failed: ${dbError}`);
+        this.logger.error(
+          `recreate bookkeeping failed: ${this.storedErrorMessage(dbError)}`,
+        );
       }
     } catch (error) {
       this.logOperationFailure('recreating', error);
@@ -925,9 +910,7 @@ export class PalmyraConsumerService {
           existing.storedSignedTx,
         );
       } else {
-        if (!data.utxoRef || Object.keys(data.utxoRef).length === 0) {
-          data.utxoRef = await this.enrichUtxoRef(data.utxos);
-        }
+        data.utxoRef = await this.enrichUtxoRef(data.utxos, data.utxoRef);
         const result = (await this.retryBuildTransaction(() =>
           buildSpend(this.factory, { data }, true),
         )) as { hash: string; signedTx: string } | undefined;
@@ -949,7 +932,9 @@ export class PalmyraConsumerService {
           });
         }
       } catch (dbError) {
-        this.logger.error(`spend bookkeeping failed: ${dbError}`);
+        this.logger.error(
+          `spend bookkeeping failed: ${this.storedErrorMessage(dbError)}`,
+        );
       }
     } catch (error) {
       this.logOperationFailure('spending', error);
