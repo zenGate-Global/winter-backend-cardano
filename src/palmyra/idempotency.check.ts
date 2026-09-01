@@ -6,6 +6,8 @@ import {
 import { CheckStatus } from '../check/entities/check.entity.js';
 import { deriveRequestFingerprint } from './idempotency.js';
 import { PalmyraService } from './palmyra.service.js';
+import { PalmyraController } from './palmyra.controller.js';
+import { CheckService } from '../check/check.service.js';
 type CheckRow = {
   id: string;
   requestFingerprint: string | null;
@@ -33,6 +35,10 @@ type PrivateServiceAccess = {
     data: JobData,
     check: CheckRow,
   ) => Promise<void>;
+  enrichUtxoRef: (
+    utxos: { txHash: string; outputIndex: number }[],
+    existing?: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
   dispatchSpendCommodity: (data: JobData, fp: string | null) => Promise<void>;
   dispatchRecreateCommodity: (
     data: JobData,
@@ -93,7 +99,7 @@ function fakeChainServices(outputIndex = 5) {
       },
     },
     deploymentService: {
-      getDeploymentByContractAddress: async (address: string) => {
+      getLiveDeploymentByContractAddress: async (address: string) => {
         deploymentCalls.push(address);
         return {
           deploymentTxHash: 'deplHash',
@@ -130,7 +136,7 @@ function makeService({
   service.deploymentService =
     deploymentService ??
     ({
-      getDeploymentByContractAddress: async () => {
+      getLiveDeploymentByContractAddress: async () => {
         throw new Error('deployment service must not be called');
       },
     } as object);
@@ -291,17 +297,12 @@ async function checkInsertRaces(): Promise<void> {
     assert.equal(queued.calls.length, enqueues, `23505 ${name} enqueue count`);
   }
   const lookupError = new Error('lookup failed');
-  for (const [name, checkDb, cause] of [
+  for (const [name, checkDb] of [
     [
       'lookup failure',
       fakeCheckDb({ createError: duplicateError(), exists: true, lookupError }),
-      lookupError,
     ],
-    [
-      'missing race row',
-      fakeCheckDb({ createError: duplicateError() }),
-      undefined,
-    ],
+    ['missing race row', fakeCheckDb({ createError: duplicateError() })],
   ] as const) {
     const service = makeService({ checkDb });
     await assert.rejects(
@@ -321,12 +322,11 @@ async function checkInsertRaces(): Promise<void> {
           500,
           `23505 ${name} must return 500`,
         );
-        if (cause)
-          assert.equal(
-            (error as InternalServerErrorException).cause,
-            cause,
-            `23505 ${name} must keep its cause`,
-          );
+        assert.equal(
+          (error as InternalServerErrorException).cause,
+          undefined,
+          `23505 ${name} must not expose its cause`,
+        );
         return true;
       },
     );
@@ -378,13 +378,13 @@ async function checkRouteReplays(): Promise<void> {
       else await action();
       assert.equal(
         chain.providerCalls.length,
-        0,
-        `${route.name} ${caseName} must not call provider on request thread`,
+        expectedEnqueue,
+        `${route.name} ${caseName} provider call count`,
       );
       assert.equal(
         chain.deploymentCalls.length,
-        0,
-        `${route.name} ${caseName} must not call deployment on request thread`,
+        expectedEnqueue,
+        `${route.name} ${caseName} deployment call count`,
       );
       assert.equal(
         queued.calls.length,
@@ -392,20 +392,238 @@ async function checkRouteReplays(): Promise<void> {
         `${route.name} ${caseName} enqueue count`,
       );
       if (expectedEnqueue) {
-        assert.deepEqual(
-          queued.calls[0].data.utxoRef,
-          {},
-          `${route.name} PENDING must enqueue raw utxoRef, enrichment belongs in worker`,
-        );
+        assert.deepEqual(queued.calls[0].data.utxoRef, {
+          addr_test1xyz: {
+            singletonScript: undefined,
+            objectEventScript: {
+              txHash: 'deplHash',
+              outputIndex: 5 + routeIndex * 2,
+            },
+          },
+        });
       }
     }
   }
+}
+async function checkCompleteReplayReferences(): Promise<void> {
+  const existing = {
+    addr_test1_existing: {
+      singletonScript: undefined,
+      objectEventScript: { txHash: 'old-deployment', outputIndex: 1 },
+    },
+  };
+  const service = makeService({
+    provider: {
+      fetchUTxOs: async (txHash: string) => {
+        if (txHash === 'missing') return [];
+        return [
+          {
+            output: {
+              address:
+                txHash === 'existing'
+                  ? 'addr_test1_existing'
+                  : 'addr_test1_new',
+            },
+          },
+        ];
+      },
+    },
+    deploymentService: {
+      getLiveDeploymentByContractAddress: async (address: string) => {
+        if (address === 'addr_test1_missing') throw new Error('missing');
+        return {
+          deploymentTxHash: 'new-deployment',
+          deploymentOutputIndex: 2,
+        };
+      },
+    },
+  });
+  const enriched = await service.enrichUtxoRef(
+    [
+      { txHash: 'existing', outputIndex: 0 },
+      { txHash: 'new', outputIndex: 1 },
+    ],
+    existing,
+  );
+  assert.notEqual(enriched, existing);
+  assert.deepEqual(enriched, {
+    ...existing,
+    addr_test1_new: {
+      singletonScript: undefined,
+      objectEventScript: { txHash: 'new-deployment', outputIndex: 2 },
+    },
+  });
+  assert.deepEqual(existing, {
+    addr_test1_existing: {
+      singletonScript: undefined,
+      objectEventScript: { txHash: 'old-deployment', outputIndex: 1 },
+    },
+  });
+  await assert.rejects(
+    service.enrichUtxoRef([{ txHash: 'missing', outputIndex: 0 }], existing),
+    /Requested UTxO was not found/,
+  );
+}
+async function checkControllerHashIdentity(): Promise<void> {
+  const calls: { data: JobData; fingerprint: string | null }[] = [];
+  const service = {
+    dispatchSpendCommodity: async (
+      data: JobData,
+      fingerprint: string | null,
+    ) => {
+      calls.push({ data, fingerprint });
+    },
+    dispatchRecreateCommodity: async (
+      data: JobData,
+      fingerprint: string | null,
+    ) => {
+      calls.push({ data, fingerprint });
+    },
+  } as unknown as PalmyraService;
+  const checks = {
+    findOne: async (id: string) => checkRow(CheckStatus.PENDING, null, id),
+  } as unknown as CheckService;
+  const controller = new PalmyraController(service, checks);
+  const response = { setHeader: () => {} } as never;
+  const hash = 'ABCDEF0123456789'.repeat(4);
+
+  const lower = await controller.spendCommodity(
+    { utxos: [{ txHash: hash.toLowerCase(), outputIndex: 2 }] },
+    'case-key',
+    response,
+  );
+  const upper = await controller.spendCommodity(
+    { utxos: [{ txHash: hash, outputIndex: 2 }] },
+    'case-key',
+    response,
+  );
+
+  assert.equal(
+    upper.id,
+    lower.id,
+    'hash case must not change request identity',
+  );
+  assert.equal(
+    calls[1].fingerprint,
+    calls[0].fingerprint,
+    'hash case must not change request fingerprint',
+  );
+  assert.deepEqual(calls[1].data.utxos, [
+    { txHash: hash.toLowerCase(), outputIndex: 2 },
+  ]);
+
+  await controller.spendCommodity(
+    { utxos: [{ txHash: hash, outputIndex: 3 }] },
+    undefined,
+    response,
+  );
+  assert.equal(calls[2].fingerprint, null, 'a missing key must remain unbound');
+
+  const secondHash = 'FEDCBA9876543210'.repeat(4);
+  await controller.recreateCommodity(
+    {
+      utxos: [
+        { txHash: hash, outputIndex: 3 },
+        { txHash: secondHash, outputIndex: 1 },
+      ],
+      newDataReferences: ['first', 'second'],
+    },
+    undefined,
+    response,
+  );
+  assert.equal(
+    calls[3].fingerprint,
+    null,
+    'a missing recreate key must remain unbound',
+  );
+  assert.deepEqual(calls[3].data.utxos, [
+    { txHash: hash.toLowerCase(), outputIndex: 3 },
+    { txHash: secondHash.toLowerCase(), outputIndex: 1 },
+  ]);
+  assert.deepEqual(calls[3].data.newDataReferences, ['first', 'second']);
+}
+async function checkPersistedHashNormalization(): Promise<void> {
+  type StoredCheck = CheckRow & {
+    additionalInfo?: {
+      utxos: { txHash: string; outputIndex: number }[];
+      newDataReferences: string[];
+      utxoRef: unknown;
+    };
+  };
+  let existing: StoredCheck | null = null;
+  const created: StoredCheck[] = [];
+  const checkDb = {
+    exists: async () => existing !== null,
+    findOne: async () => existing,
+    create: async (check: StoredCheck) => {
+      created.push(check);
+      existing = check;
+    },
+    update: async () => {},
+  };
+  const queued = fakeQueue();
+  const chain = fakeChainServices();
+  const service = makeService({
+    checkDb,
+    queue: queued.queue,
+    provider: chain.provider,
+    deploymentService: chain.deploymentService,
+  });
+  const controller = new PalmyraController(
+    service as unknown as PalmyraService,
+    checkDb as unknown as CheckService,
+  );
+  const response = { setHeader: () => {} } as never;
+  const firstHash = 'ABCDEF0123456789'.repeat(4);
+  const secondHash = 'FEDCBA9876543210'.repeat(4);
+  const lowerUtxos = [
+    { txHash: firstHash.toLowerCase(), outputIndex: 4 },
+    { txHash: secondHash.toLowerCase(), outputIndex: 1 },
+  ];
+  const newDataReferences = ['first', 'second'];
+
+  const first = await controller.recreateCommodity(
+    {
+      utxos: [
+        { txHash: firstHash, outputIndex: 4 },
+        { txHash: secondHash, outputIndex: 1 },
+      ],
+      newDataReferences,
+    },
+    'persisted-case-key',
+    response,
+  );
+
+  assert.equal(created.length, 1);
+  assert.deepEqual(created[0].additionalInfo, {
+    utxos: lowerUtxos,
+    newDataReferences,
+    utxoRef: {},
+  });
+  assert.deepEqual(queued.calls[0].data.utxos, lowerUtxos);
+
+  const replay = await controller.recreateCommodity(
+    { utxos: lowerUtxos, newDataReferences },
+    'persisted-case-key',
+    response,
+  );
+
+  assert.equal(replay.id, first.id);
+  assert.equal(created.length, 1, 'same normalized request must reuse its row');
+  assert.deepEqual(chain.providerCalls, [
+    [firstHash.toLowerCase(), 4],
+    [secondHash.toLowerCase(), 1],
+  ]);
+  assert.deepEqual(queued.calls[1].data.utxos, lowerUtxos);
 }
 async function main(): Promise<void> {
   await checkFingerprints();
   await checkAlreadyAccepted();
   await checkInsertRaces();
   await checkRouteReplays();
+  await checkCompleteReplayReferences();
+  await checkControllerHashIdentity();
+  await checkPersistedHashNormalization();
   console.log('idempotency check passed');
 }
 void main().catch((error) => {

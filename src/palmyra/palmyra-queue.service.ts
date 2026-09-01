@@ -26,6 +26,23 @@ import type {
 // Note that the createQueue options apply only when the queue row is first
 // created, so changing this does nothing to an existing database.
 const TX_QUEUE_RETRY_LIMIT = 2;
+export const TX_QUEUE_CREATE_OPTIONS = {
+  policy: 'singleton',
+  retryLimit: TX_QUEUE_RETRY_LIMIT,
+  retryDelay: 30,
+  retryBackoff: true,
+  retryDelayMax: 300,
+  expireInSeconds: 1800,
+  heartbeatSeconds: 60,
+  deleteAfterSeconds: 604800,
+  warningQueueSize: 100,
+} as const;
+export const TX_QUEUE_WORK_OPTIONS = {
+  localConcurrency: 1,
+  pollingIntervalSeconds: 2,
+  heartbeatRefreshSeconds: 30,
+  includeMetadata: true,
+} as const;
 
 @Injectable()
 export class PalmyraQueueService implements OnModuleInit, OnModuleDestroy {
@@ -50,28 +67,11 @@ export class PalmyraQueueService implements OnModuleInit, OnModuleDestroy {
     });
 
     await boss.start();
-    await boss.createQueue(TX_QUEUE_NAME, {
-      policy: 'singleton',
-      retryLimit: TX_QUEUE_RETRY_LIMIT,
-      retryDelay: 30,
-      retryBackoff: true,
-      retryDelayMax: 300,
-      expireInSeconds: 1800,
-      heartbeatSeconds: 60,
-      deleteAfterSeconds: 604800,
-      warningQueueSize: 100,
-    });
+    await boss.createQueue(TX_QUEUE_NAME, TX_QUEUE_CREATE_OPTIONS);
 
     this.workerId = await boss.work<TxQueueJob>(
       TX_QUEUE_NAME,
-      {
-        localConcurrency: 1,
-        pollingIntervalSeconds: 2,
-        heartbeatRefreshSeconds: 30,
-        // Needed for retryCount below. This is a worker option, not one of the
-        // createQueue options, so it takes effect on every boot.
-        includeMetadata: true,
-      },
+      TX_QUEUE_WORK_OPTIONS,
       async (jobs) => {
         const [job] = jobs as unknown as JobWithMetadata<TxQueueJob>[];
         if (!job) {

@@ -1,20 +1,8 @@
-import {
-  ClassSerializerInterceptor,
-  Controller,
-  Get,
-  Param,
-  Query,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { CheckService } from './check.service';
-import { Check } from './entities/check.entity';
-import { ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
-import { TokenizeCommodityDto } from '../palmyra/dto/tokenize-commodity.dto';
-import { RecreateCommodityDto } from '../palmyra/dto/recreate-commodity.dto';
-
+import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { PublicCheckDto, toPublicCheck } from './dto/public-check.dto';
 @ApiTags('Check')
-@ApiExtraModels(TokenizeCommodityDto, RecreateCommodityDto)
-@UseInterceptors(ClassSerializerInterceptor)
 @Controller('check')
 export class CheckController {
   constructor(private readonly checkService: CheckService) {}
@@ -22,24 +10,24 @@ export class CheckController {
   @Get()
   @ApiOkResponse({
     description: 'Returns all checks (default 50, max 200)',
-    type: Check,
+    type: PublicCheckDto,
     isArray: true,
   })
-  findAll(
+  async findAll(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
-  ): Promise<Check[]> {
+  ): Promise<PublicCheckDto[]> {
     const take = Math.min(Math.max(parseInt(limit ?? '50', 10) || 50, 1), 200);
     const skip = Math.max(parseInt(offset ?? '0', 10) || 0, 0);
-    return this.checkService.findAll(take, skip);
+    return (await this.checkService.findAll(take, skip)).map(toPublicCheck);
   }
 
   @Get(':id')
   @ApiOkResponse({
     description: 'Returns a check by id',
-    type: Check,
+    type: PublicCheckDto,
   })
-  findOne(@Param('id') id: string): Promise<Check> {
-    return this.checkService.findOne(id);
+  async findOne(@Param('id') id: string): Promise<PublicCheckDto> {
+    return toPublicCheck(await this.checkService.findOne(id));
   }
 }

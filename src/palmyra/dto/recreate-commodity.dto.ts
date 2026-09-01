@@ -1,9 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsString,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 import { SpendCommodityResponseDto, UtxoDto } from './spend-commodity.dto';
@@ -16,6 +18,7 @@ export class RecreateCommodityDto {
   })
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => UtxoDto)
   utxos: UtxoDto[];
@@ -27,7 +30,9 @@ export class RecreateCommodityDto {
   })
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(100)
   @IsString({ each: true })
+  @Matches(/^\S(?:.*\S)?$/, { each: true })
   newDataReferences: string[];
 }
 

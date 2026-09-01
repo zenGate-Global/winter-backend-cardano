@@ -2,6 +2,12 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
+export function matchesApiKey(expected: Buffer, provided?: string): boolean {
+  const candidate = Buffer.from(provided ?? '');
+  return (
+    candidate.length === expected.length && timingSafeEqual(candidate, expected)
+  );
+}
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
@@ -16,12 +22,9 @@ export class ApiKeyGuard implements CanActivate {
   }
 
   canActivate(context: ExecutionContext): boolean {
-    const provided = Buffer.from(
-      context.switchToHttp().getRequest<Request>().get('x-api-key') ?? '',
-    );
-    return (
-      provided.length === this.apiKey.length &&
-      timingSafeEqual(provided, this.apiKey)
+    return matchesApiKey(
+      this.apiKey,
+      context.switchToHttp().getRequest<Request>().get('x-api-key'),
     );
   }
 }

@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsHexadecimal,
@@ -39,6 +40,7 @@ export class SpendCommodityDto {
   })
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => UtxoDto)
   utxos: UtxoDto[];

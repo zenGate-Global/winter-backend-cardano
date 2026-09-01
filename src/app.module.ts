@@ -10,6 +10,15 @@ import { IpfsModule } from './ipfs/ipfs.module';
 import { DeploymentModule } from './deployment/deployment.module';
 import { ApiKeyGuard } from './api-key.guard';
 
+const cloudSeverity: Record<string, string> = {
+  trace: 'DEBUG',
+  debug: 'DEBUG',
+  info: 'INFO',
+  warn: 'WARNING',
+  error: 'ERROR',
+  fatal: 'CRITICAL',
+};
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -82,16 +91,28 @@ import { ApiKeyGuard } from './api-key.guard';
     DeploymentModule,
     LoggerModule.forRoot({
       pinoHttp: {
-        redact: { paths: ['req.headers["x-api-key"]'], censor: '[redacted]' },
-        customProps: () => ({
-          context: 'HTTP',
-        }),
-        transport: {
-          target: 'pino-pretty',
-          options: {
-            singleLine: true,
-          },
+        redact: {
+          paths: [
+            'req.headers.x-api-key',
+            'req.headers.authorization',
+            'req.headers["x-api-key"]',
+          ],
+          censor: '[redacted]',
         },
+        formatters: {
+          level: (label) => ({ severity: cloudSeverity[label] }),
+        },
+        customLogLevel: (_req, res, err) =>
+          err || res.statusCode >= 500 ? 'error' : 'info',
+        customProps: () => ({ context: 'HTTP' }),
+        ...(process.env.K_SERVICE
+          ? {}
+          : {
+              transport: {
+                target: 'pino-pretty',
+                options: { singleLine: true },
+              },
+            }),
       },
     }),
     IpfsModule,

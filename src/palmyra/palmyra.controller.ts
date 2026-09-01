@@ -45,7 +45,30 @@ export class PalmyraController {
   // route always resolves to the same job, so a retry of a request whose
   // response was lost returns the original job instead of starting a second
   // transaction. Without the header the behaviour is unchanged.
+  private validateUtxoIdentities(
+    utxos: { txHash: string; outputIndex: number }[],
+  ): void {
+    const identities = new Set<string>();
+    for (const utxo of utxos) {
+      utxo.txHash = utxo.txHash.toLowerCase();
+      const identity = utxo.txHash + '#' + utxo.outputIndex;
+      if (identities.has(identity)) {
+        throw new HttpException(
+          'Duplicate UTxO reference',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      identities.add(identity);
+    }
+  }
+
   private jobId(scope: IdempotencyScope, key?: string): string {
+    if (key !== undefined && key.trim().length === 0) {
+      throw new HttpException(
+        'Idempotency-Key must not be blank',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     if (key !== undefined && key.trim().length > IDEMPOTENCY_KEY_MAX_LENGTH) {
       throw new HttpException(
         `Idempotency-Key must be ${IDEMPOTENCY_KEY_MAX_LENGTH} characters or fewer`,
@@ -122,6 +145,7 @@ export class PalmyraController {
     @Headers('idempotency-key') idempotencyKey?: string,
     @Res({ passthrough: true }) res?: Response,
   ): Promise<OperationResponseDto> {
+    this.validateUtxoIdentities(message.utxos);
     const id = this.jobId('spend-commodity', idempotencyKey);
     const requestFingerprint = idempotencyKey?.trim()
       ? deriveRequestFingerprint(message)
@@ -182,6 +206,7 @@ export class PalmyraController {
     @Headers('idempotency-key') idempotencyKey?: string,
     @Res({ passthrough: true }) res?: Response,
   ): Promise<OperationResponseDto> {
+    this.validateUtxoIdentities(message.utxos);
     const utxoLen = message.utxos.length;
     const dataLen = message.newDataReferences.length;
     if (utxoLen !== dataLen) {

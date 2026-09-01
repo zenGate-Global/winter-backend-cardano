@@ -1,13 +1,43 @@
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { Logger, LoggerErrorInterceptor } from 'nestjs-pino';
-import { ValidationPipe } from '@nestjs/common';
 import { PORT } from './constants';
-import { json, urlencoded } from 'express';
+import { json, raw, urlencoded } from 'express';
+import { ConfigService } from '@nestjs/config';
+import type { NextFunction, Request, Response } from 'express';
+import { matchesApiKey } from './api-key.guard';
+import { IPFS_CANONICAL_BODY, prepareIpfsBody } from './ipfs/lossless-json';
+
+export function parseIpfsJson(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): void {
+  if (!Buffer.isBuffer(req.body)) {
+    next();
+    return;
+  }
+  try {
+    const { body, canonical } = prepareIpfsBody(req.body);
+    (req as unknown as Record<symbol, Buffer>)[IPFS_CANONICAL_BODY] = canonical;
+    req.body = body;
+    next();
+  } catch (error) {
+    next(
+      error instanceof BadRequestException
+        ? error
+        : new BadRequestException('Invalid JSON body'),
+    );
+  }
+}
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+    bodyParser: false,
+  });
   app.enableCors({
     origin: '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
@@ -15,6 +45,18 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
   app.useGlobalInterceptors(new LoggerErrorInterceptor());
 
+  const apiKey = Buffer.from(
+    app.get(ConfigService).getOrThrow('WINTER_API_KEY'),
+  );
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!matchesApiKey(apiKey, req.get('x-api-key'))) {
+      res.status(403).json({ statusCode: 403, message: 'Forbidden resource' });
+      return;
+    }
+    next();
+  });
+  app.use('/ipfs', raw({ limit: '50mb', type: 'application/json' }));
+  app.use('/ipfs', parseIpfsJson);
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
@@ -38,4 +80,4 @@ async function bootstrap() {
 
   await app.listen(PORT());
 }
-bootstrap();
+if (require.main === module) void bootstrap();

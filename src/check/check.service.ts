@@ -220,11 +220,8 @@ export class CheckService {
     return (result.affected ?? 0) > 0;
   }
 
-  // Guarded attach of the reference-deployment CBOR to a SUBMITTED mint.
-  // The composite replaces signedTx only when the row still holds the exact
-  // mint txid and mint CBOR that the caller built from, and confirmation is
-  // still null. Zero affected is an error unless the identical composite is
-  // already stored, which makes a redelivery idempotent.
+  // Attach only when the row still holds the exact mint identity. Confirmation
+  // can win this race, so the update preserves all terminal state.
   async attachReferenceDeployment(
     id: string,
     expectedMintTxid: string,
@@ -232,6 +229,11 @@ export class CheckService {
     compositeSignedTx: string,
   ): Promise<void> {
     const normalized = expectedMintTxid.toLowerCase();
+    const allowed = [
+      CheckStatus.SUBMITTED,
+      CheckStatus.SUCCESS,
+      CheckStatus.CONFIRMED,
+    ];
     const result = await this.checkRepository
       .createQueryBuilder()
       .update(Check)
@@ -240,18 +242,16 @@ export class CheckService {
         unknown
       >)
       .where('id = :id', { id })
-      .andWhere('"status" = :status', { status: CheckStatus.SUBMITTED })
+      .andWhere('"status" IN (:...allowed)', { allowed })
       .andWhere('LOWER("txid") = :txid', { txid: normalized })
-      .andWhere('"signedTx" = :currentSignedTx', {
-        currentSignedTx,
-      })
-      .andWhere('"confirmation" IS NULL')
+      .andWhere('"signedTx" = :currentSignedTx', { currentSignedTx })
       .execute();
     if ((result.affected ?? 0) > 0) return;
     const row = await this.checkRepository.findOneBy({ id });
     if (
       row?.signedTx === compositeSignedTx &&
-      row.txid?.toLowerCase() === normalized
+      row.txid?.toLowerCase() === normalized &&
+      allowed.includes(row.status)
     )
       return;
     throw new BadRequestException('guarded deployment attachment refused');

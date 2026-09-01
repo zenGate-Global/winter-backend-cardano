@@ -7,6 +7,12 @@ import { tokenizeCommodityJob } from '../types/job.dto';
 import { TokenizeCommodityDto } from './dto/tokenize-commodity.dto';
 import { PalmyraConsumerService } from './palmyra.consumer.service';
 
+const deploymentCbor = '84a0a0f5f6';
+const deploymentTxid =
+  'd36a2619a672494604e11bb447cbcf5231e9f2ba25c2169177edc941bd50ad6c';
+const mintCbor = '84a10080a0f5f6';
+const mintTxid =
+  'fa130e633a87e57868fcd176bbe196cf8c6733d75d67239eca1d29746d1e3fc8';
 type StoredDeployment = {
   signedTx: string;
   txid: string;
@@ -32,15 +38,21 @@ function makeConsumer(args: {
   initialSignedTx: string;
   deployment: StoredDeployment;
   failDeploymentWrite?: boolean;
+  live?: { txHash: string; outputIndex: number } | null;
+  currentValidator?: boolean;
 }): {
   consumer: ConsumerAccess;
   getStoredSignedTx: () => string;
   submitted: string[];
   getBuildCalls: () => number;
+  getAttachCalls: () => number;
+  saved: StoredDeployment[];
 } {
   let storedSignedTx = args.initialSignedTx;
   let buildCalls = 0;
+  let attachCalls = 0;
   const submitted: string[] = [];
+  const saved: StoredDeployment[] = [];
   const consumer = Object.create(
     PalmyraConsumerService.prototype,
   ) as ConsumerAccess;
@@ -51,6 +63,7 @@ function makeConsumer(args: {
       currentSignedTx: string,
       compositeSignedTx: string,
     ) => {
+      attachCalls += 1;
       if (storedSignedTx === compositeSignedTx) return;
       if (storedSignedTx !== currentSignedTx) {
         throw new Error('guarded deployment attachment refused');
@@ -59,14 +72,18 @@ function makeConsumer(args: {
     },
   };
   consumer['deploymentService'] = {
-    deploymentExistsByContractAddress: async () => false,
+    getCurrentReferenceState: async () => 'none',
+    findLiveReference: async () => args.live ?? null,
+    getLiveDeploymentByContractAddress: async () => {
+      throw new Error('Historical deployment identity is unavailable');
+    },
   };
   consumer['deployerAddress'] = args.deployment.deployAddress;
   consumer['getMintContext'] = async () => ({
     contractAddress: args.deployment.contractAddress,
     utxoRef: { txHash: 'f'.repeat(64), outputIndex: 0 },
   });
-  consumer['findOnChainDeployment'] = async () => null;
+
   consumer['retryBuildTransaction'] = async () => {
     buildCalls += 1;
     return {
@@ -76,49 +93,58 @@ function makeConsumer(args: {
     };
   };
   consumer['factory'] = {
+    objectEventContractAddress:
+      args.currentValidator === false
+        ? 'addr_test1_current_contract'
+        : args.deployment.contractAddress,
     submitTx: async (signedTx: string) => {
       assert.equal(
         storedSignedTx,
-        composite('mint-cbor', args.deployment),
+        composite(mintCbor, args.deployment),
         'deployment identity must be durable before submit',
       );
       submitted.push(signedTx);
       return args.deployment.txid;
     },
   };
-  consumer['saveDeployment'] = async () => {
+  consumer['saveDeployment'] = async (deployment: StoredDeployment) => {
     if (args.failDeploymentWrite) throw new Error('worker cancelled');
+    saved.push(deployment);
   };
   return {
     consumer,
     getStoredSignedTx: () => storedSignedTx,
     submitted,
     getBuildCalls: () => buildCalls,
+    getAttachCalls: () => attachCalls,
+    saved,
   };
 }
 
 async function checkCancellationAndRedelivery(): Promise<void> {
   const deployment: StoredDeployment = {
-    signedTx: 'deployment-cbor',
-    txid: 'd'.repeat(64),
-    outputIndex: 1,
+    signedTx: deploymentCbor,
+    txid: deploymentTxid,
+    outputIndex: 0,
     contractAddress: 'addr_test1_contract',
     deployAddress: 'addr_test1_deployer',
   };
   const job = { id: 'mint-id' } as tokenizeCommodityJob;
   const first = makeConsumer({
-    initialSignedTx: 'mint-cbor',
+    initialSignedTx: mintCbor,
     deployment,
     failDeploymentWrite: true,
   });
   await assert.rejects(
-    first.consumer.ensureDeployment(job, 'a'.repeat(64), 'mint-cbor'),
+    first.consumer.ensureDeployment(job, mintTxid, mintCbor),
     /worker cancelled/,
   );
-  const storedComposite = composite('mint-cbor', deployment);
+  const storedComposite = composite(mintCbor, deployment);
   assert.equal(first.getStoredSignedTx(), storedComposite);
-  assert.deepEqual(first.submitted, ['deployment-cbor']);
+  assert.deepEqual(first.submitted, [deploymentCbor]);
   assert.equal(first.getBuildCalls(), 1);
+  assert.equal(first.getAttachCalls(), 1);
+  assert.deepEqual(first.saved, []);
 
   const redelivery = makeConsumer({
     initialSignedTx: storedComposite,
@@ -126,13 +152,81 @@ async function checkCancellationAndRedelivery(): Promise<void> {
   });
   await redelivery.consumer.ensureDeployment(
     job,
-    'a'.repeat(64),
-    'mint-cbor',
+    mintTxid,
+    mintCbor,
     deployment,
   );
   assert.equal(redelivery.getBuildCalls(), 0, 'redelivery must not rebuild');
-  assert.deepEqual(redelivery.submitted, ['deployment-cbor']);
+  assert.deepEqual(redelivery.submitted, [deploymentCbor]);
   assert.equal(redelivery.getStoredSignedTx(), storedComposite);
+  assert.equal(redelivery.getAttachCalls(), 0);
+  assert.deepEqual(redelivery.saved, [deployment]);
+
+  const live = makeConsumer({
+    initialSignedTx: mintCbor,
+    deployment,
+    live: { txHash: 'c'.repeat(64), outputIndex: 4 },
+  });
+  await live.consumer.ensureDeployment(job, mintTxid, mintCbor);
+  assert.equal(live.getBuildCalls(), 0);
+  assert.equal(live.getAttachCalls(), 0);
+  assert.deepEqual(live.submitted, []);
+  assert.deepEqual(live.saved, [
+    {
+      signedTx: '',
+      txid: 'c'.repeat(64),
+      outputIndex: 4,
+      contractAddress: deployment.contractAddress,
+      deployAddress: deployment.deployAddress,
+    },
+  ]);
+
+  const invalidDeployments: StoredDeployment[] = [
+    { ...deployment, contractAddress: 'addr_test1_other_contract' },
+    { ...deployment, deployAddress: 'addr_test1_other_deployer' },
+    { ...deployment, outputIndex: 1 },
+    { ...deployment, outputIndex: Number.MAX_SAFE_INTEGER + 1 },
+    { ...deployment, txid: 'e'.repeat(64) },
+    { ...deployment, signedTx: mintCbor },
+    { ...deployment, signedTx: 'not-cbor' },
+  ];
+  for (const invalid of invalidDeployments) {
+    const rejected = makeConsumer({
+      initialSignedTx: storedComposite,
+      deployment,
+    });
+    await assert.rejects(
+      rejected.consumer.ensureDeployment(job, mintTxid, mintCbor, invalid),
+    );
+    assert.equal(rejected.getBuildCalls(), 0);
+    assert.equal(rejected.getAttachCalls(), 0);
+    assert.deepEqual(rejected.submitted, []);
+    assert.deepEqual(rejected.saved, []);
+  }
+
+  const invalidMint = makeConsumer({ initialSignedTx: mintCbor, deployment });
+  await assert.rejects(
+    invalidMint.consumer.ensureDeployment(job, '0'.repeat(64), mintCbor),
+    /Stored mint transaction hash does not match its identity/,
+  );
+  assert.equal(invalidMint.getBuildCalls(), 0);
+  assert.equal(invalidMint.getAttachCalls(), 0);
+  assert.deepEqual(invalidMint.submitted, []);
+  assert.deepEqual(invalidMint.saved, []);
+
+  const legacy = makeConsumer({
+    initialSignedTx: mintCbor,
+    deployment,
+    currentValidator: false,
+  });
+  await assert.rejects(
+    legacy.consumer.ensureDeployment(job, mintTxid, mintCbor),
+    /Historical deployment identity is unavailable/,
+  );
+  assert.equal(legacy.getBuildCalls(), 0);
+  assert.equal(legacy.getAttachCalls(), 0);
+  assert.deepEqual(legacy.submitted, []);
+  assert.deepEqual(legacy.saved, []);
 }
 
 type GuardRow = {
@@ -140,6 +234,7 @@ type GuardRow = {
   status: CheckStatus;
   txid: string;
   signedTx: string | null;
+  error: string | null;
   confirmation: unknown | null;
 };
 
@@ -171,17 +266,21 @@ function guardedCheckService(row: GuardRow): CheckService {
       qb['execute'] = async () => {
         const matches = clauses.every(({ sql, parameters }) => {
           if (sql.includes('id =')) return row.id === parameters['id'];
-          if (sql.includes('LOWER(check.txid)'))
+          if (sql.includes('LOWER("txid")'))
             return (
               row.txid.toLowerCase() ===
               String(parameters['txid']).toLowerCase()
             );
           if (sql.includes('txid =')) return row.txid === parameters['txid'];
-          if (sql.includes('signedTx ='))
+          if (sql.includes('"signedTx" ='))
             return row.signedTx === parameters['currentSignedTx'];
-          if (sql.includes('confirmation IS NULL'))
+          if (sql.includes('"confirmation" IS NULL'))
             return row.confirmation === null;
-          if (sql.includes('status ='))
+          if (sql.includes('"status" IN'))
+            return (parameters['allowed'] as CheckStatus[]).includes(
+              row.status,
+            );
+          if (sql.includes('"status" ='))
             return row.status === parameters['status'];
           return false;
         });
@@ -200,26 +299,29 @@ function guardedCheckService(row: GuardRow): CheckService {
 async function checkGuardedMismatch(): Promise<void> {
   const txid = 'a'.repeat(64);
   const target = composite('mint-cbor', {
-    signedTx: 'deployment-cbor',
-    txid: 'd'.repeat(64),
-    outputIndex: 1,
+    signedTx: deploymentCbor,
+    txid: deploymentTxid,
+    outputIndex: 0,
     contractAddress: 'addr_test1_contract',
     deployAddress: 'addr_test1_deployer',
   });
   for (const mismatch of [
     { txid: 'b'.repeat(64) },
     { signedTx: 'different-cbor' },
+    { status: CheckStatus.PENDING },
+    { status: CheckStatus.QUEUED },
     { status: CheckStatus.ERROR },
-    { confirmation: { txid } },
   ]) {
     const row: GuardRow = {
       id: 'mint-id',
       status: CheckStatus.SUBMITTED,
       txid,
       signedTx: 'mint-cbor',
+      error: 'preserve-error',
       confirmation: null,
       ...mismatch,
     };
+    const before = structuredClone(row);
     await assert.rejects(
       guardedCheckService(row).attachReferenceDeployment(
         row.id,
@@ -229,20 +331,30 @@ async function checkGuardedMismatch(): Promise<void> {
       ),
       /deployment/i,
     );
-    assert.notEqual(row.signedTx, target);
+    assert.deepEqual(row, before);
   }
 
-  const row: GuardRow = {
-    id: 'mint-id',
-    status: CheckStatus.SUBMITTED,
-    txid,
-    signedTx: 'mint-cbor',
-    confirmation: null,
-  };
-  const service = guardedCheckService(row);
-  await service.attachReferenceDeployment(row.id, txid, 'mint-cbor', target);
-  assert.equal(row.signedTx, target);
-  await service.attachReferenceDeployment(row.id, txid, 'mint-cbor', target);
+  for (const status of [
+    CheckStatus.SUBMITTED,
+    CheckStatus.SUCCESS,
+    CheckStatus.CONFIRMED,
+  ]) {
+    const confirmation = { txid, block: 'block-proof' };
+    const row: GuardRow = {
+      id: 'mint-id',
+      status,
+      txid,
+      signedTx: 'mint-cbor',
+      error: 'preserve-error',
+      confirmation,
+    };
+    const unchanged = { ...structuredClone(row), signedTx: target };
+    const service = guardedCheckService(row);
+    await service.attachReferenceDeployment(row.id, txid, 'mint-cbor', target);
+    assert.deepEqual(row, unchanged);
+    await service.attachReferenceDeployment(row.id, txid, 'mint-cbor', target);
+    assert.deepEqual(row, unchanged);
+  }
 }
 
 async function checkTokenNameBoundary(): Promise<void> {
